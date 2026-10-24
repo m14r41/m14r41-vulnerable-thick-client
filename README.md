@@ -28,7 +28,14 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 
 ## Demo
 
-![Demo](assets/MVTA.gif)
+<p align="center">
+  <em>MVTA - Vulnerable Thick Client Demo</em>
+</p>
+<p align="left">
+  <img src="assets/MVTA.gif" alt="Demo">
+</p>
+
+
 
 ----
 
