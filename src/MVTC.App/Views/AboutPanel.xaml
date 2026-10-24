@@ -1,0 +1,207 @@
+<UserControl x:Class="MVTC.App.Views.AboutPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#070A0F" Foreground="#E6EDF3"
+             FontFamily="Segoe UI" FontSize="13">
+    <UserControl.Resources>
+        <Style TargetType="Hyperlink">
+            <Setter Property="Foreground" Value="#58A6FF"/>
+            <Setter Property="TextDecorations" Value="{x:Null}"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#79B8FF"/>
+                    <Setter Property="TextDecorations" Value="Underline"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="#0D1117"/>
+            <Setter Property="BorderBrush" Value="#161B22"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="20"/>
+        </Style>
+        <Style x:Key="LinkChip" TargetType="Button">
+            <Setter Property="Background" Value="#121D33"/>
+            <Setter Property="Foreground" Value="#79B8FF"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#1F2937"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#1A2A4A"/>
+                                <Setter Property="Foreground" Value="#A8D1FF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32" HorizontalAlignment="Stretch">
+
+            <!-- HERO -->
+            <Border Background="#070F1E" CornerRadius="8" Padding="32" BorderBrush="#121D33" BorderThickness="1">
+                <Border.Resources>
+                    <LinearGradientBrush x:Key="hero" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Color="#0D1F3C" Offset="0"/>
+                        <GradientStop Color="#07090D" Offset="1"/>
+                    </LinearGradientBrush>
+                </Border.Resources>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- avatar -->
+                    <Border Grid.Column="0" Background="#1F6FEB" Width="96" Height="96" CornerRadius="48" VerticalAlignment="Top">
+                        <TextBlock Text="M14" FontSize="26" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+
+                    <StackPanel Grid.Column="1" Margin="22,0,0,0">
+                        <TextBlock Text="Madhurendra Kumar" FontSize="28" FontWeight="SemiBold"/>
+                        <TextBlock Text="Offensive security · thick-client &amp; desktop pentesting · lab design"
+                                   Opacity="0.75" Margin="0,4,0,0" FontSize="14"/>
+                        <TextBlock Margin="0,10,0,0" Opacity="0.8" FontSize="12" TextWrapping="Wrap">
+                            Author of the MVTC lab and the handle
+                            <Hyperlink NavigateUri="https://github.com/m14r41" RequestNavigate="OnNav">M14R41</Hyperlink>.
+                            This application is an intentionally-vulnerable Windows thick-client designed as a hands-on
+                            research platform for 50 real pentest tradecraft techniques.
+                        </TextBlock>
+
+                        <WrapPanel Margin="0,16,0,0">
+                            <Button Style="{StaticResource LinkChip}" Content="🔗  github.com/m14r41"      Tag="https://github.com/m14r41" Click="OnOpenLink" Margin="0,0,8,8"/>
+                            <Button Style="{StaticResource LinkChip}" Content="📧  Report an issue"       Tag="https://github.com/m14r41/MVTC/issues" Click="OnOpenLink" Margin="0,0,8,8"/>
+                        </WrapPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ABOUT MVTC -->
+            <Border Style="{StaticResource Card}" Margin="0,20,0,0">
+                <StackPanel>
+                    <TextBlock Text="About MVTC Vault Manager" FontSize="18" FontWeight="SemiBold"/>
+                    <TextBlock Margin="0,8,0,0" Opacity="0.8" TextWrapping="Wrap">
+                        MVTC is a Windows thick-client CTF built to mirror the shape of a real
+                        enterprise asset-vault product. Every button, panel and backend endpoint
+                        is modelled on patterns that recur across audited commercial clients -
+                        and each of them has at least one planted vulnerability for you to
+                        discover, exploit, and submit as a flag.
+                    </TextBlock>
+                    <TextBlock Margin="0,10,0,0" Opacity="0.8" TextWrapping="Wrap">
+                        Coverage spans install-time misconfiguration, service and token abuse,
+                        process injection, native memory safety, insecure secrets handling,
+                        file-import and parser flaws, insecure IPC, insecure auto-update, and
+                        the usual corporate client-side-authz backdoors. Full writeup for each
+                        challenge lives under
+                        <Hyperlink NavigateUri="docs://SOLUTIONS" RequestNavigate="OnOpenLocalDocs">docs/SOLUTIONS/</Hyperlink>.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- PROJECTS YOU MAY LIKE -->
+            <TextBlock Text="PROJECTS YOU MAY LIKE" FontSize="10" FontWeight="SemiBold" Opacity="0.5" Margin="4,24,0,10"/>
+            <WrapPanel>
+                <Border Style="{StaticResource Card}" Width="320" Margin="0,0,12,12">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE7EF;" FontSize="16" Foreground="#58A6FF"/>
+                            <TextBlock Text="PentestingEverything" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Opacity="0.75" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="End-to-end pentesting reference - web, mobile, API, infrastructure, cloud, binary. The companion knowledge base for this lab."/>
+                        <Button Style="{StaticResource LinkChip}" Content="github.com/m14r41/PentestingEverything"
+                                Tag="https://github.com/m14r41/PentestingEverything" Click="OnOpenLink" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Width="320" Margin="0,0,12,12">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE8FD;" FontSize="16" Foreground="#58A6FF"/>
+                            <TextBlock Text="PentestingChecklist" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Opacity="0.75" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="Curated checklist covering web, mobile, API and infrastructure pentesting workflows."/>
+                        <Button Style="{StaticResource LinkChip}" Content="github.com/m14r41/PentestingChecklist"
+                                Tag="https://github.com/m14r41/PentestingChecklist" Click="OnOpenLink" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Width="320" Margin="0,0,12,12">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE721;" FontSize="16" Foreground="#58A6FF"/>
+                            <TextBlock Text="scan4secrets" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Opacity="0.75" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="Fast scanner for secret-shaped strings (API keys, tokens, private keys) in repos and bundles."/>
+                        <Button Style="{StaticResource LinkChip}" Content="github.com/m14r41/scan4secrets"
+                                Tag="https://github.com/m14r41/scan4secrets" Click="OnOpenLink" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource Card}" Width="320" Margin="0,0,12,12">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE8EC;" FontSize="16" Foreground="#58A6FF"/>
+                            <TextBlock Text="wordlistForger" FontSize="15" FontWeight="SemiBold" Margin="10,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock Opacity="0.75" Margin="0,8,0,0" FontSize="12" TextWrapping="Wrap"
+                                   Text="Targeted wordlist generator for credential and fuzzing payloads."/>
+                        <Button Style="{StaticResource LinkChip}" Content="github.com/m14r41/wordlistForger"
+                                Tag="https://github.com/m14r41/wordlistForger" Click="OnOpenLink" Margin="0,12,0,0"/>
+                    </StackPanel>
+                </Border>
+            </WrapPanel>
+
+            <!-- RUNTIME CREDITS -->
+            <Border Style="{StaticResource Card}" Margin="0,12,0,0">
+                <StackPanel>
+                    <TextBlock Text="CREDITS" FontSize="10" FontWeight="SemiBold" Opacity="0.5"/>
+                    <TextBlock Margin="0,8,0,0" FontSize="12" Opacity="0.8" TextWrapping="Wrap">
+                        <Run FontWeight="SemiBold">Author / Creator:</Run>  Madhurendra Kumar (M14R41)<LineBreak/>
+                        <Run FontWeight="SemiBold">Vendor:</Run>  M14R41 Labs<LineBreak/>
+                        <Run FontWeight="SemiBold">License:</Run>  © 2026-2027 Madhurendra Kumar (M14R41) · isolated-VM educational use only<LineBreak/>
+                        <Run FontWeight="SemiBold">Runtime:</Run>  .NET 10 (self-contained single-file) · WPF · Microsoft.Data.Sqlite · Newtonsoft.Json · Microsoft.Extensions.Hosting<LineBreak/>
+                        <Run FontWeight="SemiBold">Icons:</Run>  Segoe Fluent Icons (© Microsoft)<LineBreak/>
+                        <Run FontWeight="SemiBold">Packaging:</Run>  WiX Toolset v4
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+
+            <!-- FOLLOW A LINK -->
+            <Border Style="{StaticResource Card}" Margin="0,20,0,0">
+                <StackPanel>
+                    <TextBlock Text="FOLLOW A TRUSTED LINK" FontSize="10" FontWeight="SemiBold" Opacity="0.5"/>
+                    <TextBlock Opacity="0.65" FontSize="12" Margin="0,4,0,10"
+                               Text="Open any URL the IT team shares with you. We accept http://, https:// and local file:// schemes."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="LinkBox"
+                                 Background="#0D1117" Foreground="#E6EDF3" BorderBrush="#30363D" Padding="8"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0" Click="OnFollowLink"
+                                Content="Open" Background="#1F6FEB" Foreground="White" BorderThickness="0" Padding="12,8" Cursor="Hand"/>
+                    </Grid>
+                    <TextBlock x:Name="LinkOut" Margin="0,8,0,0" FontFamily="Consolas" FontSize="11" Opacity="0.75" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <!-- RESEARCH BANNER -->
+            <Border Background="#0A1420" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="18" Margin="0,20,0,0">
+                <StackPanel>
+                    <TextBlock Text="FOR AUTHORISED RESEARCH ONLY" FontSize="10" FontWeight="SemiBold" Foreground="#F85149"/>
+                    <TextBlock Margin="0,6,0,0" Opacity="0.85" TextWrapping="Wrap"
+                               Text="Install this application only in snapshotted, networkless virtual machines or lab environments that you own. Nothing here is production-safe. Any proof-of-concept artifact produced through MVTC must stay inside the lab."/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

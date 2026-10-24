@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    MVTC.LegacyModule — intentionally insecure native "legacy file converter".
+    All memory-safety protections are DISABLED here on purpose. Do NOT model
+    production project files on this one.
+
+    Author: Madhurendra Kumar (M14R41) · © 2026
+  -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{B1B1B1B1-0001-0001-0001-000000000002}</ProjectGuid>
+    <RootNamespace>MVTC_LegacyModule</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <TargetName>MVTC.LegacyModule</TargetName>
+    <OutDir>$(SolutionDir)build\native\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)build\native\int\$(ProjectName)\$(Configuration)\</IntDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- VULN: #5 / #20 — stack-cookie checks disabled -->
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <!-- VULN: #5 — optimize for raw layout, no SEH-safe flag enforcement -->
+      <ControlFlowGuard>false</ControlFlowGuard>
+      <!-- Keep warnings loose so the deliberate footguns don't fail the build -->
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <WarningLevel>Level2</WarningLevel>
+      <AdditionalOptions>/sdl- %(AdditionalOptions)</AdditionalOptions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <SubSystem>Windows</SubSystem>
+      <!-- VULN: #5 — ASLR, DEP, SafeSEH all disabled -->
+      <RandomizedBaseAddress>false</RandomizedBaseAddress>
+      <DataExecutionPrevention>false</DataExecutionPrevention>
+      <ImageHasSafeExceptionHandlers>false</ImageHasSafeExceptionHandlers>
+      <!-- Keep PDBs so exploit development against this module is tractable -->
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- No code signing -->
+      <ModuleDefinitionFile>MVTC.LegacyModule.def</ModuleDefinitionFile>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="stackbof.cpp" />
+    <ClCompile Include="fmtstring.cpp" />
+    <ClCompile Include="uafree.cpp" />
+    <ClCompile Include="intoverflow.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="MVTC.LegacyModule.def" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

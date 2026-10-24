@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(MvtcTargetFrameworkWindows)</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MVTC.Challenges</RootNamespace>
+    <AssemblyName>MVTC.Challenges</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MVTC.Core\MVTC.Core.csproj" />
+  </ItemGroup>
+</Project>

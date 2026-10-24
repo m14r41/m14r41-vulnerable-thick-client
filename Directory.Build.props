@@ -1,0 +1,18 @@
+<Project>
+  <PropertyGroup>
+    <Company>M14R41 Labs</Company>
+    <Product>M14R41 Vulnerable Thick Client (MVTC)</Product>
+    <Authors>Madhurendra Kumar (M14R41)</Authors>
+    <Copyright>© 2026 Madhurendra Kumar (M14R41)</Copyright>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <!-- Switch MvtcTargetFramework to net8.0 once the .NET 8 SDK is installed. -->
+    <MvtcTargetFramework>net10.0</MvtcTargetFramework>
+    <MvtcTargetFrameworkWindows>net10.0-windows</MvtcTargetFrameworkWindows>
+  </PropertyGroup>
+</Project>

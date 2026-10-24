@@ -1,0 +1,94 @@
+<UserControl x:Class="MVTC.App.Views.WorkspaceLayout"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource AppBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+             FontFamily="Segoe UI" FontSize="13">
+    <UserControl.Resources>
+        <Style x:Key="BlockTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="32,28,32,28">
+
+            <!-- Welcome header -->
+            <StackPanel Orientation="Horizontal">
+                <StackPanel>
+                    <TextBlock x:Name="HelloText" Text="Welcome back, m14r41." FontSize="30" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                    <TextBlock x:Name="SubText" Text="Signed in · role: user" Opacity="0.75" Margin="0,4,0,0" Foreground="{DynamicResource TextMutedBrush}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Stats row -->
+            <Grid Margin="0,26,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="0,0,5,0">
+                    <StackPanel>
+                        <TextBlock Text="PROGRESS" Style="{StaticResource BlockTitle}"/>
+                        <TextBlock x:Name="ProgressText" Text="0 / 50" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock Text="of 50 challenges" FontSize="11" Opacity="0.75" Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="5,0,5,0">
+                    <StackPanel>
+                        <TextBlock Text="POINTS" Style="{StaticResource BlockTitle}"/>
+                        <TextBlock x:Name="PointsText" Text="0" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock Text="of 4,680 total" FontSize="11" Opacity="0.75" Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="5,0,5,0">
+                    <StackPanel>
+                        <TextBlock Text="RANK" Style="{StaticResource BlockTitle}"/>
+                        <TextBlock x:Name="RankText" Text="Script Kiddie" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock x:Name="RankSub" Text="start the climb" FontSize="11" Opacity="0.75" Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="3" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="16,14" Margin="5,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="ROLE" Style="{StaticResource BlockTitle}"/>
+                        <TextBlock x:Name="RoleText" Text="user" FontSize="24" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                        <TextBlock x:Name="RoleSub2" Text="admin locked" FontSize="11" Opacity="0.75" Foreground="{DynamicResource TextMutedBrush}"/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Content row -->
+            <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="1.3*"/>
+                    <ColumnDefinition Width="1*"/>
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="18" Margin="0,0,5,0">
+                    <StackPanel>
+                        <TextBlock Text="RECENT ACTIVITY" Style="{StaticResource BlockTitle}"/>
+                        <StackPanel x:Name="ActivityList"/>
+                    </StackPanel>
+                </Border>
+
+                <Border Grid.Column="1" Background="{DynamicResource CardBgBrush}" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" CornerRadius="10" Padding="18" Margin="5,0,0,0">
+                    <StackPanel>
+                        <TextBlock Text="QUICK ACTIONS" Style="{StaticResource BlockTitle}"/>
+                        <Button Content="Submit a flag"    Click="OnSubmit"   Background="#FF4F8B" Foreground="White" Padding="12,8" BorderThickness="0" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                        <Button Content="Open flag console" Click="OnOpenFlagsConsole" Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}" Padding="12,8" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                        <Button Content="Shell console"     Click="OnOpenShell"       Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}" Padding="12,8" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Cursor="Hand" HorizontalAlignment="Stretch" Margin="0,0,0,8"/>
+                        <Button Content="Admin console"     Click="OnOpenAdmin"       Background="Transparent" Foreground="{DynamicResource TextPrimaryBrush}" Padding="12,8" BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="1" Cursor="Hand" HorizontalAlignment="Stretch"/>
+                        <TextBlock Text="LAB BANNER" Style="{StaticResource BlockTitle}" Margin="0,18,0,8"/>
+                        <TextBlock FontSize="12" TextWrapping="Wrap" Opacity="0.85" Foreground="{DynamicResource TextMutedBrush}"
+                                   Text="Intentionally vulnerable training lab. Treat as a real target - intercept, inspect, dump, exploit."/>
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

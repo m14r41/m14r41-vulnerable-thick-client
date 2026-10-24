@@ -1,0 +1,108 @@
+<UserControl x:Class="MVTC.App.Views.CommsLabPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#070A0F" Foreground="#E6EDF3"
+             FontFamily="Segoe UI" FontSize="13">
+    <UserControl.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#1F6FEB"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#0D1117"/>
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="BorderBrush" Value="#30363D"/>
+            <Setter Property="Padding" Value="8"/>
+        </Style>
+        <Style x:Key="H2" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.5"/>
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24" HorizontalAlignment="Stretch">
+            <TextBlock Text="Network &amp; vault" FontSize="22" FontWeight="SemiBold"/>
+            <TextBlock Opacity="0.65" Margin="0,4,0,20"
+                       Text="Directory search, network diagnostics, software updates, and vault service IPC. All backend endpoints are bound to 127.0.0.1 and can be observed with Burp Suite / mitmproxy if you want to see what the client sends."/>
+
+            <Border Background="#0D1117" CornerRadius="6" Padding="18">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="DIRECTORY SEARCH"/>
+                    <TextBlock Opacity="0.6" FontSize="12" Margin="0,2,0,10"
+                               Text="Find assets by name. Supports LIKE wildcards (% _). Results are filtered to your account's visibility."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="AssetQuery"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0" Content="Search" Click="OnSearchAssets"/>
+                    </Grid>
+                    <TextBlock x:Name="AssetSqlOut" Margin="0,6,0,0" FontFamily="Consolas" Opacity="0.6" FontSize="11"/>
+                    <TextBlock x:Name="AssetOut" Margin="0,4,0,0" FontFamily="Consolas" Opacity="0.9" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#0D1117" CornerRadius="6" Padding="18" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="NETWORK DIAGNOSTICS - PING"/>
+                    <TextBlock Opacity="0.6" FontSize="12" Margin="0,2,0,10"
+                               Text="Ping a host from this workstation (uses the system ping command)."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" x:Name="PingHost" Text="127.0.0.1"/>
+                        <Button Grid.Column="1" Margin="8,0,0,0" Content="Ping" Click="OnPing"/>
+                    </Grid>
+                    <TextBlock x:Name="PingOut" Margin="0,8,0,0" FontFamily="Consolas" Opacity="0.9" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#0D1117" CornerRadius="6" Padding="18" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="VAULT SERVICE (NAMED PIPE)"/>
+                    <TextBlock Opacity="0.6" FontSize="12" Margin="0,2,0,10"
+                               Text="Call verbs on the Vault service over its named pipe (\\.\pipe\MVTCVaultSvc). PING and WHOAMI are safe; the other verbs are intended for the service account."/>
+                    <WrapPanel>
+                        <Button Content="Health check"               Click="OnPipePing"           Margin="0,0,8,8"/>
+                        <Button Content="Identity"                   Click="OnPipeWhoami"         Margin="0,0,8,8"/>
+                        <Button Content="Export service key"         Click="OnPipeGetFlag"        Margin="0,0,8,8"/>
+                        <Button Content="Request impersonated read"  Click="OnPipeImpersonate"    Margin="0,0,8,8"/>
+                        <Button Content="Atomic file copy"           Click="OnPipeToctou"         Margin="0,0,8,8"/>
+                    </WrapPanel>
+                    <TextBlock Margin="0,4,0,0" Opacity="0.5" FontSize="11"
+                               Text="Responses are JSON - inspect every field. Not every value is harmless."/>
+                    <TextBlock x:Name="PipeOut" Margin="0,8,0,0" FontFamily="Consolas" Opacity="0.9" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#0D1117" CornerRadius="6" Padding="18" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="SOFTWARE UPDATES"/>
+                    <TextBlock Opacity="0.6" FontSize="12" Margin="0,2,0,10"
+                               Text="Reach out to the update manifest and stage any available update payload."/>
+                    <Button Content="Check for updates" Click="OnCheckUpdate" HorizontalAlignment="Left"/>
+                    <TextBlock x:Name="UpdateOut" Margin="0,8,0,0" FontFamily="Consolas" Opacity="0.9" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+
+            <Border Background="#0D1117" CornerRadius="6" Padding="18" Margin="0,16,0,0">
+                <StackPanel>
+                    <TextBlock Style="{StaticResource H2}" Text="BACKEND API - LOGIN TEST"/>
+                    <TextBlock Opacity="0.6" FontSize="12" Margin="0,2,0,10"
+                               Text="Issue a login call to the vault manager's backend. The response includes your session token."/>
+                    <Grid>
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="100"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Username" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="0" Grid.Column="1" x:Name="ApiUser" Text="jdoe" Margin="0,0,0,6"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Password" VerticalAlignment="Center"/>
+                        <TextBox   Grid.Row="1" Grid.Column="1" x:Name="ApiPass" Text="password" Margin="0,0,0,6"/>
+                        <Button    Grid.Row="2" Grid.Column="1" Content="POST /login" Click="OnCallApi" HorizontalAlignment="Left"/>
+                    </Grid>
+                    <TextBlock x:Name="ApiOut" Margin="0,8,0,0" FontFamily="Consolas" Opacity="0.9" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

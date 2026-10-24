@@ -1,0 +1,141 @@
+<UserControl x:Class="MVTC.Challenges.ChallengesPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="#111418" Foreground="#E6EDF3"
+             FontFamily="Segoe UI" FontSize="13">
+    <UserControl.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="#1F6FEB"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="#0D1117"/>
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="BorderBrush" Value="#30363D"/>
+            <Setter Property="Padding" Value="6"/>
+        </Style>
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#161B22"/>
+            <Setter Property="Foreground" Value="#A6AFBB"/>
+            <Setter Property="BorderBrush" Value="#30363D"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="SeparatorBrush" Value="#30363D"/>
+            <Setter Property="MinHeight" Value="30"/>
+        </Style>
+        <Style TargetType="DataGridRow">
+            <Setter Property="Background" Value="#0D1117"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Style.Triggers>
+                <Trigger Property="AlternationIndex" Value="1">
+                    <Setter Property="Background" Value="#101620"/>
+                </Trigger>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="#1F2A44"/>
+                    <Setter Property="Foreground" Value="#E6EDF3"/>
+                </Trigger>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#161B22"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="DataGridCell">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="#0D1117"/>
+            <Setter Property="Foreground" Value="#E6EDF3"/>
+            <Setter Property="BorderBrush" Value="#30363D"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="GridLinesVisibility" Value="None"/>
+            <Setter Property="RowBackground" Value="#0D1117"/>
+            <Setter Property="AlternatingRowBackground" Value="#101620"/>
+            <Setter Property="AlternationCount" Value="2"/>
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="CanUserDeleteRows" Value="False"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="SelectionMode" Value="Single"/>
+            <Setter Property="SelectionUnit" Value="FullRow"/>
+            <Setter Property="RowHeight" Value="34"/>
+            <Setter Property="ColumnHeaderHeight" Value="38"/>
+            <Setter Property="VerticalGridLinesBrush" Value="Transparent"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#1F2937"/>
+        </Style>
+    </UserControl.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal">
+            <TextBlock Text="MVTC · Challenges" FontSize="20" FontWeight="SemiBold"/>
+            <TextBlock x:Name="RankText" Text="  ·  Script Kiddie" Margin="10,2,0,0" Opacity="0.8" FontSize="14"/>
+            <TextBlock x:Name="PointsText" Text="  ·  0 pts / 3950" Margin="10,2,0,0" Opacity="0.8" FontSize="14"/>
+            <TextBlock x:Name="SolvedText" Text="  ·  0 / 40 solved" Margin="10,2,0,0" Opacity="0.8" FontSize="14"/>
+            <Button Content="Refresh" Margin="20,0,0,0" Click="OnRefresh"/>
+            <Button Content="Soft reset" Margin="8,0,0,0" Background="#30363D" Click="OnSoftReset"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="1" Margin="0,8,0,8" Opacity="0.75"
+                   Text="Submit a flag below - flags are in the format MVTC{v##_slug_...}. Select a challenge first."/>
+
+        <DataGrid Grid.Row="2" x:Name="ChallengeGrid" SelectionChanged="OnSelectionChanged">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="#"        Binding="{Binding VulnNo}"       Width="56"/>
+                <DataGridTextColumn Header="Title"    Binding="{Binding Title}"        Width="*"/>
+                <DataGridTextColumn Header="Category" Binding="{Binding Category}"     Width="160"/>
+                <DataGridTextColumn Header="Tier"     Binding="{Binding Tier}"         Width="80"/>
+                <DataGridTextColumn Header="Points"   Binding="{Binding Points}"       Width="70"/>
+                <DataGridTextColumn Header="CWE"      Binding="{Binding Cwe}"          Width="90"/>
+                <DataGridTextColumn Header="Status"   Binding="{Binding StatusDisplay}" Width="100"/>
+                <DataGridTextColumn Header="Attempts" Binding="{Binding Attempts}"     Width="80"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Border Grid.Row="3" Background="#0A1420" CornerRadius="6" Padding="14,10" Margin="0,12,0,0" BorderBrush="#1F2937" BorderThickness="1">
+            <StackPanel>
+                <TextBlock x:Name="SelectedText" FontSize="13" Text="Select a row to see its hint."/>
+                <TextBlock x:Name="FormatText"   FontFamily="Consolas" FontSize="11" Opacity="0.6" Margin="0,6,0,0"/>
+                <TextBlock x:Name="HintText"     Margin="0,4,0,0" Opacity="0.9" TextWrapping="Wrap"/>
+                <TextBlock x:Name="ToolsText"    Margin="0,4,0,0" FontSize="11" Opacity="0.55" FontFamily="Consolas"/>
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Grid.Column="0" x:Name="FlagInput" Padding="8" Background="#0D1117" Foreground="#E6EDF3" BorderBrush="#30363D"/>
+                    <Button Grid.Column="1" Content="Submit flag" Margin="8,0,0,0" Click="OnSubmit"/>
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <TextBlock Grid.Row="4" x:Name="ToastText" Margin="0,10,0,0" FontWeight="SemiBold" Foreground="#3FB950"/>
+    </Grid>
+</UserControl>

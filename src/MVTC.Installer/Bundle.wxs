@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MVTC-Setup.exe - Burn bootstrapper that bundles the .NET 8/10 runtime check
+  and chains the MVTC-Setup.msi. Ships deliberately UNSIGNED (VULN #5).
+
+  Author: Madhurendra Kumar (M14R41) · M14R41 Labs · © 2026
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx">
+  <Bundle Name="M14R41 Vulnerable Thick Client (MVTC)"
+          Manufacturer="M14R41 Labs (Madhurendra Kumar)"
+          Version="1.0.0.0"
+          UpgradeCode="A1A1A1A1-FEED-FACE-BEEF-00000000A001"
+          AboutUrl="https://profile.m14r41.in"
+          IconSourceFile="..\..\assets\icon.ico"
+          Compressed="yes">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication LicenseFile="..\..\LICENSE" Theme="hyperlinkLicense" />
+    </BootstrapperApplication>
+    <Chain>
+      <!-- .NET 8 Desktop Runtime (or .NET 10 if we re-pin). -->
+      <PackageGroupRef Id="NetCoreDesktopRuntime80_x64" />
+      <MsiPackage SourceFile="MVTC-Setup.msi" DisplayInternalUI="no" />
+    </Chain>
+  </Bundle>
+</Wix>

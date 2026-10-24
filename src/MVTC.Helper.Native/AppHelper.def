@@ -1,0 +1,4 @@
+LIBRARY AppHelper
+EXPORTS
+    AppHelper_Init
+    AppHelper_Transform

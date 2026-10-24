@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>$(MvtcTargetFrameworkWindows)</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>MVTC.App</RootNamespace>
+    <AssemblyName>MVTC</AssemblyName>
+    <ApplicationIcon>..\..\assets\mvtc.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="..\..\assets\mvtc.ico" Link="Resources\mvtc.ico" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MVTC.Core\MVTC.Core.csproj" />
+    <ProjectReference Include="..\MVTC.Scoreboard\MVTC.Scoreboard.csproj" />
+    <ProjectReference Include="..\MVTC.Challenges\MVTC.Challenges.csproj" />
+    <ProjectReference Include="..\MVTC.MockApi\MVTC.MockApi.csproj" />
+    <ProjectReference Include="..\MVTC.MockUpdate\MVTC.MockUpdate.csproj" />
+    <ProjectReference Include="..\MVTC.VaultSvc\MVTC.VaultSvc.csproj" />
+  </ItemGroup>
+</Project>

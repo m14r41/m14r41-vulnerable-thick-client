@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(MvtcTargetFramework)</TargetFramework>
+    <RootNamespace>MVTC.MockUpdate</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\MVTC.Core\MVTC.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,7 @@
+LIBRARY MVTC.LegacyModule
+EXPORTS
+    Convert_LegacyText
+    LegacyLog
+    OpenLegacyProject
+    CloseLegacyProject
+    AllocLegacyPages

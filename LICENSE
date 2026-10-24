@@ -1,0 +1,33 @@
+M14R41 Vulnerable Thick Client (MVTC) — Educational Lab License
+Copyright (c) 2026 Madhurendra Kumar (M14R41) · M14R41 Labs
+
+This software contains INTENTIONAL VULNERABILITIES and is intended solely for
+authorized security training and research in isolated environments.
+
+Permission is granted, free of charge, to any person obtaining a copy of this
+software and associated documentation files (the "Software"), to use the
+Software for lawful educational and security-research purposes, subject to the
+following conditions:
+
+1. Isolated use only. The Software may be installed, run, or exposed only in
+   networkless, snapshotted virtual machines or lab environments that the user
+   owns or is explicitly authorized to use.
+
+2. No deployment to production. The Software must not be deployed, hosted, or
+   exposed to systems or networks that process real user data or that are
+   reachable from untrusted networks.
+
+3. No weaponization. Any proof-of-concept artifacts produced through the
+   Software must remain inside the lab environment and must not be used
+   against third-party systems without written authorization.
+
+4. Attribution. The above copyright notice and this permission notice shall be
+   included in all copies, forks, or substantial portions of the Software.
+
+5. The Software is provided "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING
+   FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+   DEALINGS IN THE SOFTWARE.

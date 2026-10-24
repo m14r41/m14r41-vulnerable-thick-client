@@ -1,0 +1,12 @@
+<UserControl x:Class="MVTC.App.Views.DashboardPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource AppBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+             FontFamily="Segoe UI" FontSize="13">
+    <Grid>
+        <!-- Mission Control layout (default) -->
+        <views_Dashboard:MissionControlLayout x:Name="LayoutMission" xmlns:views_Dashboard="clr-namespace:MVTC.App.Views" Visibility="Visible"/>
+        <!-- Workspace layout (alt) -->
+        <views_Dashboard:WorkspaceLayout      x:Name="LayoutWorkspace" xmlns:views_Dashboard="clr-namespace:MVTC.App.Views" Visibility="Collapsed"/>
+    </Grid>
+</UserControl>

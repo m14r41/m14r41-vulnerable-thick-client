@@ -1,0 +1,241 @@
+<Window x:Class="MVTC.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ch="clr-namespace:MVTC.Challenges;assembly=MVTC.Challenges"
+        xmlns:views="clr-namespace:MVTC.App.Views"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+        Title="mvtc@vault ~ console"
+        Height="820" Width="1300"
+        MinHeight="420" MinWidth="640"
+        Background="{DynamicResource AppBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+        FontFamily="Segoe UI"
+        WindowStyle="None"
+        Icon="pack://application:,,,/Resources/mvtc.ico"
+        WindowStartupLocation="CenterScreen">
+    <shell:WindowChrome.WindowChrome>
+        <shell:WindowChrome CaptionHeight="36" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0" UseAeroCaptionButtons="False"/>
+    </shell:WindowChrome.WindowChrome>
+    <Window.Resources>
+        <Style x:Key="NavButton" TargetType="RadioButton">
+            <Setter Property="GroupName" Value="Nav"/>
+            <Setter Property="Foreground" Value="{DynamicResource SidebarFgBrush}"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Padding" Value="16,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource SidebarActiveBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="{DynamicResource SidebarActiveBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SidebarActiveFgBrush}"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border BorderBrush="{DynamicResource OuterBorderBrush}" BorderThickness="1" Background="{DynamicResource AppBgBrush}">
+    <DockPanel LastChildFill="True">
+
+        <!-- CUSTOM TITLE BAR - themeable via ThemeService -->
+        <Border DockPanel.Dock="Top" Height="40" Background="{DynamicResource TitleBarBrush}">
+            <Grid>
+                <!-- Clean bottom accent -->
+                <Rectangle Height="1" VerticalAlignment="Bottom" Fill="{DynamicResource TitleAccentBrush}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                            Margin="14,0,0,0" VerticalAlignment="Center"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <Grid Width="13" Height="13" Margin="0,0,8,0" Cursor="Hand" MouseLeftButtonUp="OnDotClose">
+                        <Ellipse Fill="#FF5F57"/>
+                        <TextBlock Text="&#x2715;" FontSize="9"  FontWeight="Bold" Foreground="#5A0C06" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                    <Grid Width="13" Height="13" Margin="0,0,8,0" Cursor="Hand" MouseLeftButtonUp="OnDotMin">
+                        <Ellipse Fill="#FEBC2E"/>
+                        <TextBlock Text="&#x2212;" FontSize="12" FontWeight="Bold" Foreground="#5C3200" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0"/>
+                    </Grid>
+                    <Grid Width="13" Height="13" Cursor="Hand" MouseLeftButtonUp="OnDotMax">
+                        <Ellipse Fill="#28C840"/>
+                        <TextBlock Text="&#x2795;" FontSize="7"  FontWeight="Bold" Foreground="#064E13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Grid>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE756;" FontSize="12" Opacity="0.75" Foreground="{DynamicResource TitleFgBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Text="mvtc@vault ~ console" Margin="6,0,0,0"
+                               FontFamily="Consolas" FontSize="12" Opacity="0.9"
+                               Foreground="{DynamicResource TitleFgBrush}" VerticalAlignment="Center"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="0,0,14,0" VerticalAlignment="Center"
+                            shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                    <!-- Dashboard layout cycle -->
+                    <Button x:Name="LayoutBtn" Click="OnCycleLayout" Cursor="Hand" ToolTip="Change dashboard layout"
+                            Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource TitleAccentBrush}"
+                            Padding="7,3" Margin="0,0,8,0">
+                        <TextBlock Text="&#xE8A9;" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" FontSize="12" Foreground="{DynamicResource TitleFgBrush}"/>
+                    </Button>
+                    <!-- Palette theme toggle -->
+                    <Button x:Name="ThemeBtn" Click="OnCycleTheme" Cursor="Hand" ToolTip="Change color theme"
+                            Background="Transparent" BorderThickness="1" BorderBrush="{DynamicResource TitleAccentBrush}"
+                            Padding="7,3" Margin="0,0,10,0">
+                        <TextBlock Text="&#xE790;" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" FontSize="12" Foreground="{DynamicResource TitleFgBrush}"/>
+                    </Button>
+
+                    <Border Background="{DynamicResource TitleBadgeBgBrush}" CornerRadius="12" Padding="9,3" BorderBrush="{DynamicResource TitleAccentBrush}" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="7" Height="7" Fill="{DynamicResource TitleBadgeFgBrush}" VerticalAlignment="Center">
+                                <Ellipse.Effect>
+                                    <DropShadowEffect BlurRadius="6" ShadowDepth="0" Color="#3FB950" Opacity="0.9"/>
+                                </Ellipse.Effect>
+                            </Ellipse>
+                            <TextBlock x:Name="SessionBadge" Text="user" Margin="6,0,0,0" FontFamily="Consolas" FontSize="11" Foreground="{DynamicResource TitleBadgeFgBrush}" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    <Button Content="Log out" Click="OnLogout"
+                            Background="Transparent" Foreground="{DynamicResource TitleFgBrush}"
+                            BorderThickness="1" BorderBrush="{DynamicResource TitleAccentBrush}"
+                            Padding="12,3" FontSize="11" Cursor="Hand"
+                            Margin="10,0,0,0"/>
+                </StackPanel>
+            </Grid>
+            </Grid>
+        </Border>
+
+        <!-- APP SUB-HEADER (brand + search) -->
+        <Border DockPanel.Dock="Top" Background="{DynamicResource SubHeaderBgBrush}" BorderBrush="{DynamicResource SubHeaderBorderBrush}" BorderThickness="0,0,0,1" Padding="18,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Border Background="{DynamicResource BrandBgBrush}" CornerRadius="4" Padding="7,2">
+                        <TextBlock Text="MVTC" FontSize="14" FontWeight="Bold" Foreground="{DynamicResource BrandFgBrush}"/>
+                    </Border>
+                    <TextBlock Text="Vault Manager" FontSize="15" Margin="10,2,0,0" Foreground="{DynamicResource TextPrimaryBrush}" Opacity="0.85"/>
+                    <Border CornerRadius="4" Padding="7,2" Margin="12,2,0,0" BorderBrush="{DynamicResource TitleAccentBrush}" BorderThickness="1" Background="{DynamicResource CardBgBrush}">
+                        <TextBlock Text="Enterprise  v1.7" FontSize="11" Foreground="{DynamicResource TextAccentBrush}" FontFamily="Consolas"/>
+                    </Border>
+                </StackPanel>
+                <TextBox Grid.Column="1" x:Name="TopSearch"
+                         MaxWidth="520" HorizontalAlignment="Center"
+                         Background="{DynamicResource CardBgBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+                         BorderBrush="{DynamicResource CardBorderBrush}" Padding="10,6"
+                         FontSize="13"
+                         FontFamily="Consolas"
+                         Text="search assets, reports, users..."
+                         Opacity="0.75"
+                         GotFocus="OnSearchFocus"
+                         LostFocus="OnSearchBlur"/>
+            </Grid>
+        </Border>
+
+        <!-- FOOTER -->
+        <Border DockPanel.Dock="Bottom" Background="{DynamicResource FooterBgBrush}" BorderBrush="{DynamicResource SubHeaderBorderBrush}" BorderThickness="0,1,0,0" Padding="18,6">
+            <Grid>
+                <TextBlock Text="MVTC Lab  2026-2027"
+                           FontSize="11" Opacity="0.75" HorizontalAlignment="Center" FontFamily="Consolas"
+                           Foreground="{DynamicResource FooterFgBrush}"/>
+            </Grid>
+        </Border>
+
+        <!-- SIDEBAR + CONTENT -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="220"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <Border Grid.Column="0" Background="{DynamicResource SidebarBgBrush}" BorderBrush="{DynamicResource SidebarBorderBrush}" BorderThickness="0,0,1,0">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel Margin="10,16,10,10">
+                    <TextBlock Text="WORKSPACE" FontSize="10" Opacity="0.4" FontWeight="SemiBold" Margin="12,8,0,8"/>
+                    <RadioButton x:Name="NavDashboard" Style="{StaticResource NavButton}" IsChecked="True" Checked="OnNavChecked" Tag="Dashboard">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE80F;" FontSize="15" Width="22"/><TextBlock Text="Dashboard" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavAssets" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Assets">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE716;" FontSize="15" Width="22"/><TextBlock Text="Assets" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavDocs" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Documents">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE8A5;" FontSize="15" Width="22"/><TextBlock Text="Documents" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavNetwork" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Network">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE968;" FontSize="15" Width="22"/><TextBlock Text="Network tools" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavUpdates" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Updates">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE896;" FontSize="15" Width="22"/><TextBlock Text="Software updates" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavShell" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Shell">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE756;" FontSize="15" Width="22"/><TextBlock Text="Shell console" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+
+                    <TextBlock Text="ADMIN" FontSize="10" Opacity="0.4" FontWeight="SemiBold" Margin="12,20,0,8"/>
+                    <RadioButton x:Name="NavAdmin" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Admin" ToolTip="Requires admin role (see #10 / #11)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE72E;" FontSize="15" Width="22"/>
+                            <TextBlock Text="Admin console" VerticalAlignment="Center"/>
+                            <TextBlock x:Name="AdminLockIcon" FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE785;" FontSize="11" Margin="8,2,0,0" Opacity="0.9" Foreground="#F0883E" Visibility="Visible" ToolTip="Role gated"/>
+                        </StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavAccount" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Account">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE77B;" FontSize="15" Width="22"/><TextBlock Text="Account" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Settings">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE713;" FontSize="15" Width="22"/><TextBlock Text="Settings" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+
+                    <TextBlock Text="SECURITY RESEARCH" FontSize="10" Opacity="0.4" FontWeight="SemiBold" Margin="12,20,0,8"/>
+                    <RadioButton x:Name="NavCapture" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Capture">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE839;" FontSize="15" Width="22"/><TextBlock Text="Network capture" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavChallenges" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="Challenges">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xEB50;" FontSize="15" Width="22"/><TextBlock Text="Flag console" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                    <RadioButton x:Name="NavAbout" Style="{StaticResource NavButton}" Checked="OnNavChecked" Tag="About">
+                        <StackPanel Orientation="Horizontal"><TextBlock FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets" Text="&#xE946;" FontSize="15" Width="22"/><TextBlock Text="About" VerticalAlignment="Center"/></StackPanel>
+                    </RadioButton>
+                </StackPanel>
+                </ScrollViewer>
+            </Border>
+
+            <Grid Grid.Column="1" x:Name="ContentHost">
+                <views:DashboardPanel  x:Name="DashboardView"  Visibility="Visible"/>
+                <views:SecretsLabPanel x:Name="AssetsView"     Visibility="Collapsed"/>
+                <views:FileLabPanel    x:Name="DocumentsView"  Visibility="Collapsed"/>
+                <views:CommsLabPanel   x:Name="NetworkView"    Visibility="Collapsed"/>
+                <views:PrivescLabPanel x:Name="AdminView"      Visibility="Collapsed"/>
+                <views:AccountPanel    x:Name="AccountView"    Visibility="Collapsed"/>
+                <views:SettingsPanel   x:Name="SettingsView"   Visibility="Collapsed"/>
+                <views:ShellConsolePanel x:Name="ShellView"    Visibility="Collapsed"/>
+                <Grid x:Name="ChallengesHostGrid"              Visibility="Collapsed">
+                    <ch:ChallengesPanel x:Name="ChallengesView"/>
+                </Grid>
+                <Grid x:Name="UpdatesHostGrid"                 Visibility="Collapsed">
+                    <views:CommsLabPanel x:Name="UpdatesView"/>
+                </Grid>
+                <views:NetworkCapturePanel x:Name="CaptureView" Visibility="Collapsed"/>
+                <views:AboutPanel          x:Name="AboutView"   Visibility="Collapsed"/>
+            </Grid>
+        </Grid>
+    </DockPanel>
+    </Border>
+</Window>

@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MVTC-Setup.msi - intentionally insecure installer, with a full WixUI wizard
+  and a .NET 10 Desktop Runtime prerequisite check.
+
+  Author: Madhurendra Kumar (M14R41) · M14R41 Labs · © 2026
+
+  Build:
+    wix build Package.wxs ^
+        -ext WixToolset.UI.wixext ^
+        -ext WixToolset.Util.wixext ^
+        -ext WixToolset.NetFx.wixext ^
+        -o build\installer\MVTC-Setup.msi
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:netfx="http://wixtoolset.org/schemas/v4/wxs/netfx"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <Package Name="M14R41 Vulnerable Thick Client (MVTC)"
+           Manufacturer="M14R41 Labs (Madhurendra Kumar)"
+           Version="1.7.3.0"
+           UpgradeCode="A1A1A1A1-FEED-FACE-BEEF-000000000001"
+           Scope="perMachine"
+           Codepage="65001"
+           Compressed="yes">
+
+    <SummaryInformation Description="MVTC - M14R41 Vulnerable Thick Client (CTF lab, isolated-VM only)"
+                        Manufacturer="M14R41 Labs (Madhurendra Kumar)" />
+
+    <MajorUpgrade AllowDowngrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- ========================= UI (wizard) ========================= -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <WixVariable Id="WixUILicenseRtf" Value="LICENSE.rtf" />
+    <Icon Id="MVTCIcon.ico" SourceFile="..\..\assets\mvtc.ico" />
+    <Property Id="ARPPRODUCTICON"       Value="MVTCIcon.ico" />
+    <Property Id="ARPURLINFOABOUT"      Value="https://profile.m14r41.in" />
+    <Property Id="ARPURLUPDATEINFO"     Value="https://profile.m14r41.in" />
+    <Property Id="ARPHELPLINK"          Value="https://profile.m14r41.in" />
+    <!-- WixUI_InstallDir already sets ARPNOMODIFY / ARPNOREPAIR. -->
+
+    <!-- Dependency checks (ordered). This build ships SELF-CONTAINED .NET
+         binaries, so no .NET runtime is required on the target. The two
+         remaining checks are:
+            1. 64-bit Windows 10 / 11
+            2. Visual C++ 2015 to 2022 Redistributable (x64) for the
+               native DLLs (AppHelper.dll, MVTC.LegacyModule.dll).
+         On a failed check the installer opens your browser at the
+         official download URL and shows a clear error dialog. -->
+
+    <!-- (1) Windows 10 / 11 x64 -->
+    <Launch Condition="VersionNT64 &gt;= 603"
+            Message="MVTC requires 64-bit Windows 10 or Windows 11. This machine's Windows version is unsupported." />
+
+    <!-- (2) Visual C++ 2015 to 2022 Redistributable (x64) -->
+    <!-- The CRT installs this registry value on install; absence means not installed. -->
+    <Property Id="VCPP2022INSTALLED">
+      <RegistrySearch Id="VcppRuntime140Search"
+                      Root="HKLM"
+                      Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+                      Name="Installed"
+                      Type="raw"
+                      Bitness="always64" />
+    </Property>
+    <!-- Belt-and-suspenders: also check for vcruntime140.dll in System32. -->
+    <Property Id="VCRUNTIME140FILE">
+      <DirectorySearch Id="System32Dir" Path="[System64Folder]">
+        <FileSearch Id="VcRuntime140File" Name="vcruntime140.dll" />
+      </DirectorySearch>
+    </Property>
+
+    <SetProperty Id="WixShellExecTarget"
+                 Value="https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                 Before="MVTCOpenVcppDownload"
+                 Sequence="ui"
+                 Condition="NOT (Installed OR VCPP2022INSTALLED OR VCRUNTIME140FILE)" />
+    <CustomAction Id="MVTCOpenVcppDownload"
+                  DllEntry="WixShellExec"
+                  BinaryRef="Wix4UtilCA_X64"
+                  Execute="immediate"
+                  Return="ignore" />
+    <InstallUISequence>
+      <Custom Action="MVTCOpenVcppDownload"
+              Before="LaunchConditions"
+              Condition="NOT (Installed OR VCPP2022INSTALLED OR VCRUNTIME140FILE)" />
+    </InstallUISequence>
+    <Launch Condition="Installed OR VCPP2022INSTALLED OR VCRUNTIME140FILE"
+            Message="MVTC requires the Visual C++ 2015 to 2022 Redistributable (x64).&#13;&#10;&#13;&#10;Your browser has been opened to Microsoft's direct download page. Install vc_redist.x64.exe, then re-run this setup.&#13;&#10;&#13;&#10;Alternatively: winget install Microsoft.VCRedist.2015+.x64" />
+
+    <!-- =========================  Directory layout  ========================= -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="M14R41Dir" Name="M14R41 Labs">
+        <Directory Id="INSTALLFOLDER" Name="MVTC" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ProgMenuM14R41" Name="M14R41 Labs" />
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder" />
+
+    <Feature Id="MVTCCore" Title="MVTC runtime" Level="1">
+      <ComponentGroupRef Id="MVTCFiles" />
+      <ComponentRef Id="MVTCVaultSvcComponent" />
+      <ComponentRef Id="RegistryComponent" />
+      <ComponentRef Id="RunKeyComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+      <ComponentRef Id="DesktopShortcutComponent" />
+    </Feature>
+
+    <!-- =========================  Service  ========================= -->
+    <Component Id="MVTCVaultSvcComponent"
+               Directory="INSTALLFOLDER"
+               Guid="A1A1A1A1-FEED-FACE-BEEF-000000000002">
+      <File Id="VaultSvcExe"
+            Name="MVTCVaultSvc.exe"
+            Source="Payload\MVTCVaultSvc.exe"
+            KeyPath="yes" />
+      <!--
+        VULN: #2 - ImagePath left unquoted by design (StandardDirectory
+                   produces a path containing spaces).
+        VULN: #6 - Account=LocalSystem; the pipe handler never checks caller.
+      -->
+      <ServiceInstall Id="MVTCVaultSvcInstall"
+                      Type="ownProcess"
+                      Vital="no"
+                      Name="MVTCVaultSvc"
+                      DisplayName="MVTC Vault Service"
+                      Description="MVTC - demo privileged helper (INTENTIONALLY INSECURE - isolated-VM only)"
+                      Start="demand"
+                      Account="LocalSystem"
+                      ErrorControl="normal"
+                      Interactive="no" />
+      <ServiceControl Id="MVTCVaultSvcControl"
+                      Stop="both"
+                      Remove="uninstall"
+                      Name="MVTCVaultSvc"
+                      Wait="yes" />
+    </Component>
+
+    <!-- =========================  Registry  ========================= -->
+    <Component Id="RegistryComponent" Directory="INSTALLFOLDER" Guid="A1A1A1A1-FEED-FACE-BEEF-000000000003">
+      <!-- VULN: #24 / #26 - encryption key present under HKLM; also in binary and config. -->
+      <RegistryValue Root="HKLM" Key="SOFTWARE\M14R41 Labs\MVTC" Name="EncKey"     Type="string" Value="D0NTUSETHISKEY00" KeyPath="yes" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\M14R41 Labs\MVTC" Name="DbPassword" Type="string" Value="sqlite_sa_2024" />
+      <RegistryValue Root="HKLM" Key="SOFTWARE\M14R41 Labs\MVTC" Name="role"       Type="string" Value="user" />
+    </Component>
+
+    <Component Id="RunKeyComponent" Directory="INSTALLFOLDER" Guid="A1A1A1A1-FEED-FACE-BEEF-000000000004">
+      <!-- VULN: #8 - HKCU Run key, user-writable, no signature check. -->
+      <RegistryValue Root="HKCU"
+                     Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                     Name="MVTC"
+                     Type="string"
+                     Value="[INSTALLFOLDER]MVTC.exe --startup"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- =========================  Start menu shortcut  ========================= -->
+    <Component Id="StartMenuShortcutComponent"
+               Directory="ProgMenuM14R41"
+               Guid="A1A1A1A1-FEED-FACE-BEEF-000000000005">
+      <Shortcut Id="MVTCStartMenuShortcut"
+                Name="MVTC - Vulnerable Thick Client"
+                Description="M14R41 Vulnerable Thick Client (isolated-VM only)"
+                Target="[INSTALLFOLDER]MVTC.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="MVTCIcon.ico"
+                IconIndex="0" />
+      <RemoveFolder Id="RemoveProgMenuM14R41" On="uninstall" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\M14R41 Labs\MVTC\StartMenu"
+                     Name="installed"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- =========================  Desktop shortcut  ========================= -->
+    <Component Id="DesktopShortcutComponent"
+               Directory="DesktopFolder"
+               Guid="A1A1A1A1-FEED-FACE-BEEF-000000000006">
+      <Shortcut Id="MVTCDesktopShortcut"
+                Name="MVTC - Vulnerable Thick Client"
+                Description="M14R41 Vulnerable Thick Client (isolated-VM only)"
+                Target="[INSTALLFOLDER]MVTC.exe"
+                WorkingDirectory="INSTALLFOLDER"
+                Icon="MVTCIcon.ico"
+                IconIndex="0" />
+      <RegistryValue Root="HKCU"
+                     Key="Software\M14R41 Labs\MVTC\Desktop"
+                     Name="installed"
+                     Type="integer"
+                     Value="1"
+                     KeyPath="yes" />
+    </Component>
+
+    <!-- Just 3 files for the self-contained single-file build. -->
+    <ComponentGroup Id="MVTCFiles" Directory="INSTALLFOLDER">
+      <Component Id="MvtcExe"       Guid="A1A1A1A1-FEED-FACE-BEEF-000000000010"><File Source="Payload\MVTC.exe"         KeyPath="yes" /></Component>
+      <Component Id="MvtcAppHelper" Guid="A1A1A1A1-FEED-FACE-BEEF-000000000014"><File Source="Payload\AppHelper.dll"   KeyPath="yes" /></Component>
+      <Component Id="MvtcLegacy"    Guid="A1A1A1A1-FEED-FACE-BEEF-000000000015"><File Source="Payload\MVTC.LegacyModule.dll" KeyPath="yes" /></Component>
+    </ComponentGroup>
+
+  </Package>
+</Wix>

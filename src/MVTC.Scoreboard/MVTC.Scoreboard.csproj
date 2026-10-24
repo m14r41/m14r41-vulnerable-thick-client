@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>$(MvtcTargetFramework)</TargetFramework>
+    <RootNamespace>MVTC.Scoreboard</RootNamespace>
+    <AssemblyName>MVTC.Scoreboard</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <ProjectReference Include="..\MVTC.Core\MVTC.Core.csproj" />
+  </ItemGroup>
+</Project>
