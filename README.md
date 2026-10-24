@@ -26,6 +26,12 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 
 ---
 
+## Demo
+
+![Demo](assets/MVTA.gif)
+
+----
+
 ## Challenge inventory (50 total · 4,680 points)
 
 ### Install / Service misconfigurations (9 · 790 pts)
