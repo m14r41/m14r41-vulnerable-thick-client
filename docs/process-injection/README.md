@@ -19,7 +19,7 @@ Each writeup covers:
 | 1 | 19 | No anti-debug | EASY | dnSpy only, no coding |
 | 2 | 13 | CreateRemoteThread + LoadLibrary | EASY | MSVC |
 | 3 | 14 | APC injection | EASY | MSVC, done #13 |
-| 4 | **51** | **Remote shellcode injection** | **MEDIUM** | **MSVC, msfvenom (Kali), done #13** |
+| 4 | **51** | **[Remote shellcode injection](51-shellcode-injection.md)** | **MEDIUM** | **MSVC, msfvenom (Kali), done #13** |
 | 5 | 17 | .NET Assembly.Load | MEDIUM | dnSpy + .NET SDK |
 | 6 | 18 | Thread hijacking | MEDIUM | MSVC, done #13-15 |
 | 7 | 15 | Process hollowing | HARD | MSVC + x64 assembly basics |
@@ -98,6 +98,6 @@ Each writeup's **"How to apply this to a real target"** section lists authorized
 | [17-dotnet-assembly-load.md](17-dotnet-assembly-load.md) | .NET Assembly.Load injection |
 | [18-thread-hijacking.md](18-thread-hijacking.md) | Thread hijacking (SetThreadContext) |
 | [19-no-anti-debug.md](19-no-anti-debug.md) | No anti-debug / debugger-flip |
-| [20-shellcode-injection.md](20-shellcode-injection.md) | **NEW** — Remote shellcode injection (fileless, msfvenom-based) |
+| [51-shellcode-injection.md](51-shellcode-injection.md) | Remote shellcode injection (fileless, msfvenom-based) — lab challenge #51 |
 
 Related: payload binaries (pop-calc, reverse-shell) at **https://github.com/m14r41/PayloadEverything/tree/main/thick-client/payload** — drop-in replacements for the `flag_reader.dll` to demonstrate real impact once you've proven the injection chain works.
