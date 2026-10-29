@@ -1,6 +1,6 @@
 ﻿# M14R41 Vulnerable Thick Client (MVTC)
 
-MVTC is an intentionally vulnerable Windows thick-client application built as a hands-on CTF lab for learning thick-client pentesting and defensive detection engineering. It ships with **50 planted vulnerabilities** across 11 categories, each wired to a built-in challenge, flag, and local scoreboard.
+MVTC is an intentionally vulnerable Windows thick-client application built as a hands-on CTF lab for learning thick-client pentesting and defensive detection engineering. It ships with **51 planted vulnerabilities** across 11 categories, each wired to a built-in challenge, flag, and local scoreboard.
 
 
 
@@ -16,13 +16,14 @@ Three other accounts (`admin`, `auditor`, `svc_backup`) are seeded but their cre
 
 | | MSI | Portable EXE |
 |---|---|---|
-| **Download** | **[MVTC-v1.7.4.msi](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/download/v1.7.4/MVTC-v1.7.4.msi)** (101.6 MB) | **[MVTC-v1.7.4-portable.exe](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/download/v1.7.4/MVTC-v1.7.4-portable.exe)** (74.9 MB) |
+| **Download** | **[MVTC-v1.7.4.msi](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/download/v1.7.4/MVTC-v1.7.4.msi)** (101.6 MB) | **[MVTC-v1.8.exe](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/download/v1.8/MVTC-v1.8.exe)** (153.4 MB) |
+| Version | 1.7.4 (older release) | **1.8 (latest)** |
 | Install needed | Yes (to `Program Files`) | No, just run |
 | Vault service (`MVTCVaultSvc`) | Yes | No |
 | Admin rights required | Yes | No |
-| Challenges reachable | **All 50** | 47 (excludes #6, #12, #37) |
+| Challenges reachable | 50 (no #20 shellcode yet) | **All 51** |
 
-Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/download/v1.7.4/SHA256SUMS.txt) · all assets live on the [v1.7.4 release page](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/tag/v1.7.4).
+Latest assets: [v1.8 release page](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/tag/v1.8) · older MSI on the [v1.7.4 release page](https://github.com/m14r41/m14r41-vulnerable-thick-client/releases/tag/v1.7.4).
 
 ---
 
@@ -39,7 +40,7 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 
 ----
 
-## Challenge inventory (50 total · 4,680 points)
+## Challenge inventory (51 total · 4,800 points)
 
 ### Install / Service misconfigurations (9 · 790 pts)
 
@@ -63,7 +64,7 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 | 11 | Client-side authorization bypass | CWE-602 | EASY | 60 |
 | 12 | TOCTOU on privileged file op | CWE-367 | HARD | 150 |
 
-### Process / runtime injection (7 · 790 pts)
+### Process / runtime injection (8 · 910 pts)
 
 | # | Challenge | CWE | Tier | Pts |
 |--:|:---|:---|:---|--:|
@@ -74,15 +75,16 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 | 17 | .NET Assembly.Load / AppDomain | CWE-470 | MEDIUM | 100 |
 | 18 | Thread hijacking (SetThreadContext) | CWE-114 | HARD | 140 |
 | 19 | No anti-debug / no self-integrity | CWE-693 | EASY | 60 |
+| 20 | Remote shellcode injection (fileless) | CWE-114 | MEDIUM | 120 |
 
 ### Memory safety (native C++) (4 · 540 pts)
 
 | # | Challenge | CWE | Tier | Pts |
 |--:|:---|:---|:---|--:|
-| 20 | Stack buffer overflow (SEH / RET) | CWE-121 | HARD | 150 |
 | 21 | Format string vulnerability | CWE-134 | MEDIUM | 110 |
 | 22 | Use-after-free / double free | CWE-416 | HARD | 140 |
 | 23 | Integer overflow -> heap corruption | CWE-190 | HARD | 140 |
+| 51 | Stack buffer overflow (SEH / RET) | CWE-121 | HARD | 150 |
 
 ### Secrets / memory (5 · 300 pts)
 
@@ -159,9 +161,9 @@ Checksums: [SHA256SUMS.txt](https://github.com/m14r41/m14r41-vulnerable-thick-cl
 | 2,100 | Vault Breaker |
 | 3,000 | SYSTEM Whisperer |
 | 3,950 | Thick Client Master |
-| 4,680 | M14R41 Operator |
+| 4,800 | M14R41 Operator |
 
-Max score is 4,680 — every challenge solved.
+Max score is 4,800 — every one of the 51 challenges solved.
 
 ---
 
