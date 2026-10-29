@@ -1,6 +1,6 @@
 # Process Injection — Simple Writeups
 
-Seven process-injection techniques, solved end-to-end against MVTC, written for someone who wants to understand the concepts enough to find and exploit them on real targets.
+Eight process-injection techniques, solved end-to-end against MVTC, written for someone who wants to understand the concepts enough to find and exploit them on real targets.
 
 Each writeup covers:
 
@@ -19,7 +19,7 @@ Each writeup covers:
 | 1 | 19 | No anti-debug | EASY | dnSpy only, no coding |
 | 2 | 13 | CreateRemoteThread + LoadLibrary | EASY | MSVC |
 | 3 | 14 | APC injection | EASY | MSVC, done #13 |
-| 4 | **51** | **[Remote shellcode injection](51-shellcode-injection.md)** | **MEDIUM** | **MSVC, msfvenom (Kali), done #13** |
+| 4 | **20** | **[Remote shellcode injection](20-shellcode-injection.md)** | **MEDIUM** | **MSVC, msfvenom (Kali), done #13** |
 | 5 | 17 | .NET Assembly.Load | MEDIUM | dnSpy + .NET SDK |
 | 6 | 18 | Thread hijacking | MEDIUM | MSVC, done #13-15 |
 | 7 | 15 | Process hollowing | HARD | MSVC + x64 assembly basics |
@@ -27,7 +27,7 @@ Each writeup covers:
 
 ## Mental model
 
-All seven techniques solve the same problem: **get code execution inside another process**.
+All eight techniques solve the same problem: **get code execution inside another process**.
 
 They differ in **how noisy they are** and **what defenses they bypass**:
 
@@ -38,7 +38,7 @@ They differ in **how noisy they are** and **what defenses they bypass**:
 #15 hollow    no (hijack)   YES            YES            YES
 #18 hijack    no            YES            YES            YES
 #17 .NET      no (CLR)      no             may            MANAGED
-#51 sc        YES           NO             NO             NO
+#20 sc        YES           NO             NO             NO
 #16 reflect   no (RWX)      NO             NO             NO
 #19 debug     n/a           n/a            n/a            n/a
 ```
@@ -59,7 +59,7 @@ Every injector in this folder follows the same four-step shape — only the trig
    - #16 → copy mapped PE in, `CreateRemoteThread(entryExport)`
    - #17 → native stub → `ICLRRuntimeHost::ExecuteInDefaultAppDomain`
    - #18 → `SuspendThread → SetThreadContext → ResumeThread`
-   - #51 → write shellcode bytes, `CreateRemoteThread(…, (LPTHREAD_START_ROUTINE)buf, …)`
+   - #20 → write shellcode bytes, `CreateRemoteThread(…, (LPTHREAD_START_ROUTINE)buf, …)`
    - #19 → not injection; attach debugger and flip a boolean
 
 Learn one, you've learned most of the rest.
@@ -98,6 +98,6 @@ Each writeup's **"How to apply this to a real target"** section lists authorized
 | [17-dotnet-assembly-load.md](17-dotnet-assembly-load.md) | .NET Assembly.Load injection |
 | [18-thread-hijacking.md](18-thread-hijacking.md) | Thread hijacking (SetThreadContext) |
 | [19-no-anti-debug.md](19-no-anti-debug.md) | No anti-debug / debugger-flip |
-| [51-shellcode-injection.md](51-shellcode-injection.md) | Remote shellcode injection (fileless, msfvenom-based) — lab challenge #51 |
+| [20-shellcode-injection.md](20-shellcode-injection.md) | Remote shellcode injection (fileless, msfvenom-based) |
 
 Related: payload binaries (pop-calc, reverse-shell) at **https://github.com/m14r41/PayloadEverything/tree/main/thick-client/payload** — drop-in replacements for the `flag_reader.dll` to demonstrate real impact once you've proven the injection chain works.

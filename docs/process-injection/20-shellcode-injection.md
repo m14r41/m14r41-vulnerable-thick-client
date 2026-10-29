@@ -1,4 +1,4 @@
-# #51 (bonus) — Remote Shellcode Injection
+# #20 — Remote Shellcode Injection
 
 **Difficulty:** MEDIUM — the Windows API chain is the same as #13, but you need Kali + msfvenom.
 
@@ -6,13 +6,13 @@
 
 **Fileless cousin of #13.** You skip the DLL entirely and inject raw machine code (shellcode) into the target process. The shellcode runs inside the target — launches calc, opens a reverse shell, drops Meterpreter, whatever your msfvenom command produced.
 
-If #13 is "shove a DLL into a process", #51 is "shove the machine code directly, no DLL needed."
+If #13 is "shove a DLL into a process", #20 is "shove the machine code directly, no DLL needed."
 
 ## Why it works
 
 Exactly the same four Windows APIs as #13 (`OpenProcess`, `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`) — but with **two critical changes**:
 
-| | #13 (DLL) | #51 (shellcode) |
+| | #13 (DLL) | #20 (shellcode) |
 |---|---|---|
 | What you write via `WriteProcessMemory` | DLL path string (~50 B) | Raw shellcode bytes (~200 B – 2 KB) |
 | Memory protection on alloc | `PAGE_READWRITE` (just data) | **`PAGE_EXECUTE_READWRITE`** (code pages) |
@@ -218,7 +218,7 @@ if ($t) {
 Output:
 
 ```
-FLAG: MVTC{v51_sc_████████████████████}
+FLAG: MVTC{v20_sc_████████████████████}
 ```
 
 ## How to apply this to a real target
@@ -250,17 +250,17 @@ Malicious macro in a Word doc: the macro contains the shellcode inline + calls `
 | **PsSetCreateThreadNotifyRoutine kernel callback** | EDR driver sees `CreateRemoteThread` with entry address not inside any mapped image → high-confidence detection |
 | **AMSI for scripts** | Blocks the reverse shell's PowerShell reflection step |
 
-The strongest single setting is **`ProcessDynamicCodePolicy`**. It kills #51 outright — your `VirtualAllocEx(RWX)` returns NULL. Most apps don't enable it because it breaks JIT compilers; worth it for an app that doesn't need JIT.
+The strongest single setting is **`ProcessDynamicCodePolicy`**. It kills #20 outright — your `VirtualAllocEx(RWX)` returns NULL. Most apps don't enable it because it breaks JIT compilers; worth it for an app that doesn't need JIT.
 
 ## Flag captured
 
 ```
-MVTC{v51_sc_████████████████████}
+MVTC{v20_sc_████████████████████}
 ```
 
 ---
 
-## Summary — where #51 fits in the taxonomy
+## Summary — where #20 fits in the taxonomy
 
 Updated noise/evasion matrix (now 8 injection techniques covered):
 
@@ -272,10 +272,10 @@ Updated noise/evasion matrix (now 8 injection techniques covered):
 #17 .NET     no (CLR)     no            may            MANAGED
 #16 reflect  no (RWX)     NO            NO             NO
 #18 hijack   no           YES           YES            YES
-#51 sc       YES          NO            NO             NO    ← fileless
+#20 sc       YES          NO            NO             NO    ← fileless
 #19 debug    n/a          n/a           n/a            n/a
 ```
 
-#51 and #16 are the two "stealth tier" entries. #51 is simpler to implement (no PE parsing); #16 is harder to detect in modern EDRs because there's no new thread.
+#20 and #16 are the two "stealth tier" entries. #20 is simpler to implement (no PE parsing); #16 is harder to detect in modern EDRs because there's no new thread.
 
-For a real engagement, you'd pick #51 for speed and #16 for stealth. For a learning path, do #13 → #51 first (same chain, one changes), then tackle #16.
+For a real engagement, you'd pick #20 for speed and #16 for stealth. For a learning path, do #13 → #20 first (same chain, one changes), then tackle #16.
